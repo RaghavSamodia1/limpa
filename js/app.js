@@ -228,7 +228,7 @@ function inset(side) {
 // One pass of layout maths: hand rows and fan, dock height, and how deep the table plane
 // must be so that its far edge lands just under the avatars after perspective is applied.
 function metrics(n, showHand) {
-  const W = Math.min(window.innerWidth, 480), H = window.innerHeight;
+  const W = Math.min(app.clientWidth || window.innerWidth, 480), H = app.clientHeight || window.innerHeight;
   const hw = Math.max(52, Math.min(86, W * .175)), hh = hw * 1.42;
   const avail = W - 20 - hw;
   const minStep = hw * .36, maxStep = hw * .6;
