@@ -144,7 +144,7 @@ input{font:inherit;-webkit-user-select:text;user-select:text}
 .stage{position:absolute;inset:0;perspective:var(--persp);perspective-origin:50% var(--po);overflow:hidden;z-index:1}
 .plane{position:absolute;left:50%;margin-left:calc(var(--plw)/-2);width:var(--plw);height:var(--ph);bottom:calc(var(--dock-h) - 30px);
   transform-origin:50% 100%;transform:rotateX(var(--tilt));transform-style:preserve-3d;
-  display:flex;flex-direction:column;align-items:center;padding:calc(var(--mh)*1.85) 0 52px;gap:12px}
+  display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:calc(var(--mh)*1.85) 0 52px;gap:12px}
 .tablefill{position:absolute;left:-30%;right:-30%;top:0;bottom:-30%;border-radius:50%;
   background:
     radial-gradient(ellipse 55% 45% at 50% 42%,rgba(255,244,214,.55),rgba(255,244,214,0) 70%),
@@ -157,13 +157,13 @@ input{font:inherit;-webkit-user-select:text;user-select:text}
 .fan .back{position:absolute;left:calc(var(--mw)/-2);top:calc(var(--mh)*-1);width:var(--mw);height:var(--mh);font-size:calc(var(--mw)*.36);
   transform-origin:50% 190%;transform:rotate(var(--a))}
 .fan-t{left:50%;top:calc(var(--mh)*.62);transform:rotate(180deg)}
-.fan-l{left:calc(var(--plw)*.5 - var(--appw)*.47);top:calc(var(--mh)*3.7);transform:rotate(90deg)}
-.fan-r{left:calc(var(--plw)*.5 + var(--appw)*.47);top:calc(var(--mh)*3.7);transform:rotate(-90deg)}
+.fan-l{left:calc(var(--plw)*.5 - var(--appw)*.55);top:calc(var(--mh)*3.7);transform:rotate(90deg)}
+.fan-r{left:calc(var(--plw)*.5 + var(--appw)*.55);top:calc(var(--mh)*3.7);transform:rotate(-90deg)}
 
 /* team mats: .zonewrap holds the pill label, .zone is the scrolling mat */
 .zonewrap{position:relative;flex:1 1 0;min-height:0;display:flex}
-.zonewrap.opp{width:calc(var(--appw)*.74)}
-.zonewrap.own{width:calc(var(--appw)*.98);flex-grow:1.1;order:3}
+.zonewrap.opp{width:calc(var(--appw)*.84);flex:none;height:calc(var(--ph)*.25)}
+.zonewrap.own{width:calc(var(--appw)*1.0);flex:none;height:calc(var(--ph)*.215);order:3}
 .zonewrap.opp{order:1} .mid{order:2}
 .zone{flex:1;min-width:0;display:flex;gap:8px;border-radius:18px;padding:20px 8px 8px;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;
   background:linear-gradient(180deg,rgba(var(--tcrgb),.16),rgba(var(--tcrgb),.07));border:2px solid rgba(var(--tcrgb),.7);box-shadow:inset 0 3px 10px rgba(40,20,0,.3)}
@@ -171,7 +171,7 @@ input{font:inherit;-webkit-user-select:text;user-select:text}
 .zlabel{position:absolute;left:14px;top:-9px;z-index:3;font-size:10px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink);
   background:rgb(var(--tcrgb));padding:1px 9px;border-radius:9px;box-shadow:0 2px 4px rgba(0,0,0,.35);pointer-events:none;white-space:nowrap}
 .zonewrap.opp .deck{order:2}
-.melds{display:flex;flex-wrap:wrap;gap:20px 12px;align-items:flex-start;align-content:flex-start;flex:1;min-width:0;padding-top:4px}
+.melds{gap:14px 10px;--mw:clamp(40px,calc(var(--appw)*.135),62px);--mh:calc(var(--mw)*1.4);--strip:calc(var(--mw)*.4);display:flex;flex-wrap:wrap;gap:20px 12px;align-items:flex-start;align-content:flex-start;flex:1;min-width:0;padding-top:4px}
 .empty{color:rgba(60,35,10,.7);font-size:12px;font-weight:700;padding:6px 4px}
 .meld{display:flex;position:relative;padding:3px;border-radius:9px;border:1px solid transparent;cursor:pointer}
 .meld.dropok{border:1px dashed rgba(255,255,255,.55)}
