@@ -336,6 +336,18 @@ function playFlights(before) {
 }
 const hideFlying = () => FLY.forEach((_, cid) => app.querySelectorAll(`[data-cid="${cid}"]`).forEach((e) => { e.style.visibility = 'hidden'; }));
 
+// Shrinks a team's meld cards until all of its melds fit on the mat without scrolling.
+function fitMelds() {
+  app.querySelectorAll('.zone').forEach((zone) => {
+    const melds = zone.querySelector('.melds'), first = melds && melds.querySelector('.tc');
+    if (!first) return;
+    let mw = first.offsetWidth;
+    for (let i = 0; i < 24 && zone.scrollHeight > zone.clientHeight + 1 && mw > 24; i++) {
+      mw *= .94; melds.style.setProperty('--mw', mw.toFixed(1) + 'px');
+    }
+  });
+}
+
 /* ---------------- render ---------------- */
 function render() {
   const before = snapshot();
@@ -352,6 +364,7 @@ function render() {
   drawToasts();
   Object.keys(keep).forEach((id)=>{ const el=document.getElementById(id); if (el) { el.scrollLeft=keep[id][0]; el.scrollTop=keep[id][1]; } });
   if (UI.shake) { const el = document.querySelector(UI.shake); if (el) el.classList.add('shake'); UI.shake = null; }
+  fitMelds();
   if (before) playFlights(before);
   hideFlying();
 }
