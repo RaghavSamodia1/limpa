@@ -11,11 +11,11 @@ const SUIT_ORDER = { S:0, H:1, D:2, C:3, J:4 };
 const app = document.getElementById('app');
 
 /* Scene tuning: how far the table is tipped back and how strong the perspective is. */
-const TILT = 40, PERSP = 1500;
+const TILT0 = 38, TILT_MIN = 14, PERSP = 1800;   // starting tilt; the table flattens as melds pile up
 
 const UI = {
   screen:'menu', lobby:null, G:null, viewer:null, cover:null, spinning:false,
-  sel:new Set(), order:{}, deadline:null, deadlineKey:null, botTimer:null,
+  tilt:TILT0, sel:new Set(), order:{}, deadline:null, deadlineKey:null, botTimer:null,
   modal:null, shake:null, dealing:false, toasts:[], joinMsg:'', M:null,
 };
 
@@ -88,7 +88,7 @@ function startGame() {
   const L = UI.lobby;
   clearTimeout(UI.botTimer); UI.botTimer = null;
   UI.G = E.createGame({ gameId:L.gameId, teamNames:L.teamNames, seats:L.seats.map((s)=>({...s})) });
-  UI.screen = 'game'; UI.sel.clear(); UI.order = {}; UI.modal = null; UI.cover = null;
+  UI.screen = 'game'; UI.tilt = TILT0; UI.sel.clear(); UI.order = {}; UI.modal = null; UI.cover = null;
   UI.deadline = null; UI.deadlineKey = null;
   const hs = humans(); UI.viewer = hs.length ? hs[0] : 0;
   UI.dealing = true; UI.spinning = true;
@@ -240,7 +240,7 @@ function metrics(n, showHand) {
   const actH = 66, safeB = inset('bottom'), safeT = inset('top');
   const handH = (showHand ? hh * .95 + (rows - 1) * rowStep : hh * .62) + safeB;
   const dockH = actH + handH;
-  const c = Math.cos(TILT * Math.PI / 180), s = Math.sin(TILT * Math.PI / 180);
+  const c = Math.cos(UI.tilt * Math.PI / 180), s = Math.sin(UI.tilt * Math.PI / 180);
   const yb = H - (dockH - 30);                 // near edge of the table top, just under the dock edge
   const yf = Math.max(92, safeT + 96);         // far edge of the table on screen
   const yo = Math.max(10, safeT + 30);         // vanishing point of the perspective
@@ -252,7 +252,7 @@ function setVars(M) {
   st.setProperty('--dock-h', M.dockH + 'px'); st.setProperty('--act-h', M.actH + 'px'); st.setProperty('--hand-h', M.handH + 'px');
   st.setProperty('--ph', M.ph.toFixed(1) + 'px'); st.setProperty('--po', M.yo + 'px');
   st.setProperty('--sat', M.safeT + 'px');
-  st.setProperty('--tilt', TILT + 'deg'); st.setProperty('--persp', PERSP + 'px');
+  st.setProperty('--tilt', UI.tilt + 'deg'); st.setProperty('--persp', PERSP + 'px');
 }
 
 /* ---------------- card flights ----------------
@@ -264,7 +264,7 @@ const FLY = new Map();   // card id -> flights in progress
 const zoneOf = (el) => el.closest('.hand') ? 'hand' : el.closest('.topwrap') ? 'top' : el.closest('.history') ? 'hist' : el.closest('.meld') ? 'meld' : 'other';
 function geom(el, flat) {
   const r = el.getBoundingClientRect();
-  return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, pw: flat ? el.offsetWidth : r.width, tilt: flat ? 0 : TILT,
+  return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, pw: flat ? el.offsetWidth : r.width, tilt: flat ? 0 : UI.tilt,
     rot: flat ? (parseFloat(el.style.getPropertyValue('--rot')) || 0) : 0, nw: el.offsetWidth, nh: el.offsetHeight };
 }
 function snapshot() {
@@ -305,7 +305,7 @@ function playFlights(before) {
   if (actor && actor.seat !== UI.viewer) {
     const k = (actor.seat - UI.viewer + 4) % 4;
     const fan = app.querySelector('.fan-' + (k === 1 ? 'l' : k === 2 ? 't' : 'r'));
-    if (fan) { const r = fan.getBoundingClientRect(); src = { cx: r.left, cy: r.top, pw: UI.M ? UI.M.W * .1 : 40, tilt: TILT, rot: 0 }; }
+    if (fan) { const r = fan.getBoundingClientRect(); src = { cx: r.left, cy: r.top, pw: UI.M ? UI.M.W * .1 : 40, tilt: UI.tilt, rot: 0 }; }
   }
   const pile = (zz) => zz === 'top' || zz === 'hist';
   let n = 0;
@@ -338,19 +338,22 @@ const hideFlying = () => FLY.forEach((_, cid) => app.querySelectorAll(`[data-cid
 
 // Shrinks a team's meld cards until all of its melds fit on the mat without scrolling.
 function fitMelds() {
+  let worst = 1;
   app.querySelectorAll('.zone').forEach((zone) => {
     const melds = zone.querySelector('.melds'), first = melds && melds.querySelector('.tc');
     if (!first) return;
-    let mw = first.offsetWidth;
+    const mw0 = first.offsetWidth; let mw = mw0;
     for (let i = 0; i < 24 && zone.scrollHeight > zone.clientHeight + 1 && mw > 24; i++) {
       mw *= .94; melds.style.setProperty('--mw', mw.toFixed(1) + 'px');
     }
+    worst = Math.min(worst, mw / mw0);
   });
+  return worst;
 }
 
 /* ---------------- render ---------------- */
-function render() {
-  const before = snapshot();
+function render(carry) {
+  const before = carry ? carry.before : snapshot();
   const keep = {};
   ['oppArea','ownArea','history'].forEach((id)=>{ const el=document.getElementById(id); if (el) keep[id]=[el.scrollLeft, el.scrollTop]; });
   let html = '';
@@ -364,7 +367,8 @@ function render() {
   drawToasts();
   Object.keys(keep).forEach((id)=>{ const el=document.getElementById(id); if (el) { el.scrollLeft=keep[id][0]; el.scrollTop=keep[id][1]; } });
   if (UI.shake) { const el = document.querySelector(UI.shake); if (el) el.classList.add('shake'); UI.shake = null; }
-  fitMelds();
+  // Too many melds for the mat: tip the table flatter (more depth per row) and lay it out again.
+  if (UI.screen === 'game' && fitMelds() < .85 && UI.tilt > TILT_MIN) { UI.tilt = Math.max(TILT_MIN, UI.tilt - 6); render({ before }); return; }
   if (before) playFlights(before);
   hideFlying();
 }
@@ -490,7 +494,7 @@ function renderGame() {
         : '<div class="slot">Empty</div>'}</div>
       <div class="topwrap">${top
         ? cardHTML(top, 'topdis ' + (canPick ? 'can' : ''), canPick ? 'data-act="pickup" role="button" aria-label="Pick up the discard pile"' : '')
-        : '<div class="slot">Drop to throw</div>'}<span class="pilelbl">DISCARD · ${G.discard.length}</span></div>
+        : '<div class="slot">Drop to throw</div>'}${G.discard.length > 1 ? `<span class="cnt" title="Cards in the discard pile">${G.discard.length}</span>` : ''}</div>
       <div class="history" id="history">${hist.map((c) => cardHTML(c, 'tc')).join('')}</div>
     </div>`;
 

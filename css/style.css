@@ -144,7 +144,7 @@ input{font:inherit;-webkit-user-select:text;user-select:text}
 .stage{position:absolute;inset:0;perspective:var(--persp);perspective-origin:50% var(--po);overflow:hidden;z-index:1}
 .plane{position:absolute;left:50%;margin-left:calc(var(--plw)/-2);width:var(--plw);height:var(--ph);bottom:calc(var(--dock-h) - 30px);
   transform-origin:50% 100%;transform:rotateX(var(--tilt));transform-style:preserve-3d;
-  display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:calc(var(--mh)*1.85) 0 52px;gap:12px}
+  display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:calc(var(--mh)*1.5) 0 46px;gap:6px}
 .tablefill{position:absolute;left:-30%;right:-30%;top:0;bottom:-30%;border-radius:50%;
   background:
     radial-gradient(ellipse 55% 45% at 50% 42%,rgba(255,244,214,.55),rgba(255,244,214,0) 70%),
@@ -199,11 +199,11 @@ input{font:inherit;-webkit-user-select:text;user-select:text}
 .deck .pill.ok{background:var(--good)} .deck .pill.bad{background:var(--bad);color:#fff}
 
 /* piles in the middle of the table */
-.mid{position:relative;flex:none;display:flex;align-items:center;justify-content:center;gap:calc(var(--mw)*.5);width:calc(var(--appw)*1.02);padding:8px 12px 14px;border-radius:18px;border:2px dashed transparent}
+.mid{position:relative;flex:none;display:flex;align-items:center;justify-content:center;gap:calc(var(--mw)*.5);width:calc(var(--appw)*1.02);padding:2px 12px 14px;border-radius:18px;border:2px dashed transparent}
 .mid.hover{border-color:var(--yellow);background:rgba(255,210,63,.14)}
 .dir{position:absolute;left:50%;top:-12px;width:calc(var(--mw)*1.7);height:auto;margin-left:calc(var(--mw)*-.85);color:rgba(255,255,255,.8);filter:drop-shadow(0 2px 0 rgba(80,45,10,.5));pointer-events:none;animation:none}
-.stackwrap,.topwrap{position:relative;flex:none;width:calc(var(--mw)*1.5);height:calc(var(--mh)*1.5)}
-.stackcard,.topdis{position:absolute;left:0;top:0;width:100%;height:100%;font-size:calc(var(--mw)*.54);--sw:calc(var(--mw)*.6)}
+.stackwrap,.topwrap{position:relative;flex:none;width:calc(var(--mw)*1.2);height:calc(var(--mh)*1.2)}
+.stackcard,.topdis{position:absolute;left:0;top:0;width:100%;height:100%;font-size:calc(var(--mw)*.44);--sw:calc(var(--mw)*.5)}
 .stackcard{box-shadow:var(--th),0 8px 6px rgba(0,0,0,.3)}
 .stackcard::after{font-size:.9em}
 .stackcard.can,.topdis.can{animation:glow 1.1s infinite;cursor:pointer}
