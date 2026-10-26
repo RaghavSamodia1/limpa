@@ -131,7 +131,7 @@ input{font:inherit;-webkit-user-select:text;user-select:text}
 .tc{--sw:var(--strip);width:var(--mw);height:var(--mh);font-size:calc(var(--mw)*.36);margin-right:calc(var(--strip) - var(--mw))}
 .tc:last-child{margin-right:0}
 .tc .cc{font-size:1.75em;right:.1em}
-.hc{--sw:calc(var(--hw)*.42);position:absolute;top:0;left:50%;margin-left:calc(var(--hw)/-2);width:var(--hw);height:var(--hh);font-size:calc(var(--hw)*.42);
+.hc{--sw:calc(var(--hw)*.42);position:absolute;top:0;left:50%;margin-left:calc(var(--hw)/-2);width:var(--hw);height:var(--hh);font-size:calc(var(--hw)*.36);
   transform:rotate(var(--rot,0deg)) translateY(var(--lift,0px));transform-origin:var(--org);transition:transform .14s;touch-action:none;cursor:grab;
   box-shadow:-2px 2px 6px rgba(0,0,0,.45)}
 .hc.sel{--lift:calc(var(--hh)*-.17);box-shadow:0 0 0 3px var(--yellow),0 8px 14px rgba(0,0,0,.55)}
@@ -310,3 +310,9 @@ table.res tr.tot td{font-weight:800;font-size:18px;color:var(--yellow);border-bo
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 
 .screen.menu{justify-content:flex-start;padding-top:max(9dvh,24px)}
+
+.hc .cr{font-size:1.22em;top:.08em}
+.hc .cs{font-size:1.05em;top:1.2em}
+.hc .pips{left:44%;right:12%}
+.hc .pips i{font-size:.72em}
+.hc .pips i.a{font-size:2.4em}

@@ -238,7 +238,7 @@ function metrics(n, showHand) {
   const step = per > 1 ? Math.min(maxStep, avail / (per - 1)) : 0;
   const rowStep = hh * .5, R = hh * 4.5;
   const actH = 66, safeB = inset('bottom'), safeT = inset('top');
-  const handH = (showHand ? hh * .86 + (rows - 1) * rowStep : hh * .62) + safeB;
+  const handH = (showHand ? hh * .95 + (rows - 1) * rowStep : hh * .62) + safeB;
   const dockH = actH + handH;
   const c = Math.cos(TILT * Math.PI / 180), s = Math.sin(TILT * Math.PI / 180);
   const yb = H - (dockH - 30);                 // near edge of the table top, just under the dock edge
