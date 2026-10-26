@@ -11,7 +11,7 @@ const SUIT_ORDER = { S:0, H:1, D:2, C:3, J:4 };
 const app = document.getElementById('app');
 
 /* Scene tuning: how far the table is tipped back and how strong the perspective is. */
-const TILT = 50, PERSP = 950;
+const TILT = 40, PERSP = 1500;
 
 const UI = {
   screen:'menu', lobby:null, G:null, viewer:null, cover:null, spinning:false,
@@ -229,7 +229,7 @@ function inset(side) {
 // must be so that its far edge lands just under the avatars after perspective is applied.
 function metrics(n, showHand) {
   const W = Math.min(app.clientWidth || window.innerWidth, 480), H = app.clientHeight || window.innerHeight;
-  const hw = Math.max(52, Math.min(86, W * .175)), hh = hw * 1.42;
+  const hw = Math.max(56, Math.min(92, W * .19)), hh = hw * 1.42;
   const avail = W - 20 - hw;
   const minStep = hw * .36, maxStep = hw * .6;
   const per1 = Math.max(2, Math.floor(avail / minStep) + 1);
@@ -434,12 +434,13 @@ function renderGame() {
     const s = G.seats[seat];
     const on = G.turn === seat && G.phase !== 'over' && !UI.spinning;
     return `<div class="seat ${pos} ${on ? 'turn' : ''}" data-seat="${seat}" style="--tcrgb:var(--t${s.team}rgb)">
-      <div class="ring"><div class="ava">${s.avatar}${s.bot ? '<span class="bot">🤖</span>' : ''}</div></div>
+      <div class="ring"><div class="ava">${s.avatar}${s.bot ? '<span class="bot">🤖</span>' : ''}</div><span class="hc2" title="Cards in hand">${s.hand.length}</span></div>
       <div class="nm">${esc(s.name)}</div></div>`;
   };
-  const fan = (pos) => {
-    let h = ''; const N = 7;
-    for (let i = 0; i < N; i++) h += `<i class="back" style="--a:${((i - (N - 1) / 2) * 6).toFixed(1)}deg"></i>`;
+  // Face-down hand with the player's real card count.
+  const fan = (pos, seat) => {
+    let h = ''; const N = Math.max(1, G.seats[seat].hand.length), st = Math.min(6, 50 / Math.max(1, N - 1));
+    for (let i = 0; i < N; i++) h += `<i class="back" style="--a:${((i - (N - 1) / 2) * st).toFixed(1)}deg"></i>`;
     return `<div class="fan fan-${pos}">${h}</div>`;
   };
 
@@ -464,7 +465,7 @@ function renderGame() {
   else if (!myTurn) hint = G.seats[G.turn].name + (G.seats[G.turn].bot ? ' is playing…' : "'s turn");
   else if (G.phase === 'draw') hint = G.finalTurn ? 'Final turn: use the pile or end' : 'Tap the stack or the top discard';
   else if (G.mustUse) hint = 'Meld the glowing card first';
-  else hint = 'Drag to a meld, or onto the pile to throw';
+  else hint = 'Drag to a meld or the pile';
   let ctaBtns = '';
   if (myTurn && G.mustUse) ctaBtns += `<button class="btn ghost sm" data-act="returnPile">↩ Return pile</button>`;
   if (myTurn && G.finalTurn && !G.mustUse) ctaBtns += `<button class="btn red sm" data-act="endGame">End game</button>`;
@@ -526,7 +527,7 @@ function renderGame() {
     <div class="room"></div>
     <div class="stage"><div class="plane" id="plane">
       <div class="tablefill"></div>
-      ${fan('l')}${fan('t')}${fan('r')}
+      ${fan('l', seatAt(1))}${fan('t', seatAt(2))}${fan('r', seatAt(3))}
       ${zone(oppTeam, false)}
       ${mid}
       ${zone(myTeam, true)}
