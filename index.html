@@ -3,7 +3,12 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-<meta name="theme-color" content="#1b2238" />
+<meta name="theme-color" content="#12231d" />
+<meta name="description" content="Limpa's Breakfast: a 2v2 team card game. Play with friends on one phone, or against the computer." />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" type="image/png" href="icons/icon-192.png" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<meta name="apple-mobile-web-app-title" content="Limpa's" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
 <title>Limpa's Breakfast</title>
@@ -27,5 +32,9 @@
 
 <script src="js/engine.js"></script>
 <script src="js/app.js"></script>
+<script>
+if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function () {}); });
+</script>
+<noscript>Limpa's Breakfast needs JavaScript to run.</noscript>
 </body>
 </html>

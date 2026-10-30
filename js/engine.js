@@ -250,6 +250,7 @@
       name: (o.seats && o.seats[i] && o.seats[i].name) || 'Player ' + (i + 1),
       avatar: (o.seats && o.seats[i] && o.seats[i].avatar) || '🥞',
       bot: !!(o.seats && o.seats[i] && o.seats[i].bot),
+      level: (o.seats && o.seats[i] && o.seats[i].level) || 'smart',
       team: teamOf(i), hand: [],
     }));
     for (let k = 0; k < CFG.handSize; k++) for (let i = 0; i < 4; i++) seats[i].hand.push(deck.pop());
@@ -717,7 +718,8 @@
     return best && best.id;
   }
 
-  function botNextAction(state, seat, simulating) {
+  // 'easy' level: the original prototype computer player, unchanged.
+  function botEasy(state, seat, simulating) {
     if (state.phase === 'over' || state.turn !== seat) return null;
     const me = state.seats[seat]; const T = state.teams[teamOf(seat)];
     if (state.phase === 'draw') {
@@ -755,6 +757,172 @@
       if (tryOn(state, seat, act)) return act;
     }
     return { type: 'discard', cardId: me.hand[0].id };
+  }
+
+  /* ---------------- Smart computer player ----------------
+     Same rules as everyone else; it just plays better. It uses wildcards instead of hoarding them,
+     starts melds from any rank (and from two cards plus a wildcard), dumps junk it can no longer use,
+     avoids throwing cards the opponents can build on, and won't go out if that would lose the game. */
+  // Tunable weights (found by self-play in test/bot-tune.js). A seat can override any of them with seat.params.
+  CFG.smart = {
+    allSets: 1, wildNew: 1, wildAdd: 1, danger: 1, spendWild: 1, goOutCheck: 1,
+    wildNewHand: 8, wildNewU: .3, wildAddLen: 4, wildAddU: .35, wildAddAny: .7,
+    dangerW: 30, wildKeep: 70, wildBase: 15, sameRankW: 12, adjW: 14, gapW: 8, fitW: 60,
+    addBase: 50, addLenW: 6, newBase: 60, newLenW: 12, wildNewBase: 28, completeW: 90, pureW: 80, pickTier: 6,
+  };
+  const smartParams = (state, seat) => Object.assign({}, CFG.smart, state.seats[seat].params || null);
+  const urgency = (state) => Math.max(0, Math.min(1, 1 - state.stack.length / 33));   // 0 at the start, 1 when the centre is empty
+
+  // Would going out right now (scoring this team's melds first) win the game?
+  function goOutWins(state, seat) {
+    const s = clone(state); const team = teamOf(seat);
+    scoreMelds(s, team, []);
+    finish(s, [], 'out', seat);
+    return s.result.winner === team;
+  }
+  function endsGameBadly(state, seat, act) {
+    const s = clone(state);
+    if (!apply(s, seat, act).ok) return true;
+    return s.phase === 'over' && s.result && s.result.reason === 'out' && s.result.winner !== teamOf(seat);
+  }
+
+  function findNewMeldsAll(hand, setsOnTable, P) {
+    const seqs = [], sets = [];
+    const nat = hand.filter((c) => !isWildType(c));
+    for (const s of SUITS) {
+      const byRank = {};
+      nat.filter((c) => c.s === s).forEach((c) => { byRank[c.r] = byRank[c.r] || c; if (c.r === 1) byRank[14] = byRank[14] || c; });
+      let run = [];
+      for (let r = 14; r >= 0; r--) {
+        if (byRank[r] && !run.some((c) => c.id === byRank[r].id)) run.push(byRank[r]);
+        else { if (run.length >= 3) seqs.push(run.slice()); run = byRank[r] ? [byRank[r]] : []; }
+      }
+    }
+    if (setsOnTable < CFG.maxSets) {
+      const byR = {};
+      nat.forEach((c) => { (byR[c.r] = byR[c.r] || []).push(c); });
+      Object.keys(byR).forEach((r) => { if (byR[r].length >= 3 && (P.allSets || goodSetRank(+r))) sets.push(byR[r]); });
+    }
+    seqs.sort((a, b) => b.length - a.length);
+    sets.sort((a, b) => b.length - a.length);
+    return seqs.concat(sets);
+  }
+
+  // New melds that spend one wildcard: two to four natural cards plus a Joker or 2.
+  function findWildMelds(hand, setsOnTable) {
+    const wild = hand.find(isWildType); if (!wild) return [];
+    const nat = hand.filter((c) => !isWildType(c)); const out = [];
+    for (const s of SUITS) {
+      const cs = []; const seen = new Set();
+      nat.filter((c) => c.s === s).forEach((c) => { if (!seen.has(c.r)) { seen.add(c.r); cs.push(c); } });
+      for (let k = 2; k <= Math.min(4, cs.length); k++) {
+        for (const g of combos(cs, k, 120)) {
+          const lo = Math.min(...g.map((c) => c.r === 1 ? 1 : c.r)), hi = Math.max(...g.map((c) => c.r));
+          if (hi - lo > k + 1 && !g.some((c) => c.r === 1)) continue;
+          const v = checkNewMeld(g.concat([wild]), setsOnTable);
+          if (v.ok && v.meld.type === 'seq') out.push(g.concat([wild]));
+        }
+      }
+    }
+    if (setsOnTable < CFG.maxSets) {
+      const byR = {}; nat.forEach((c) => { (byR[c.r] = byR[c.r] || []).push(c); });
+      Object.keys(byR).forEach((r) => { if (byR[r].length >= 2) out.push(byR[r].concat([wild])); });
+    }
+    out.sort((a, b) => b.length - a.length);
+    return out;
+  }
+
+  function smartMeldMoves(state, seat, P) {
+    const me = state.seats[seat], T = state.teams[teamOf(seat)], u = urgency(state);
+    const sets = T.melds.filter((m) => m.type === 'set').length, hand = me.hand, moves = [];
+    for (const m of T.melds) {
+      const len = meldCards(m).length, wasPure = meldPure(m);
+      for (const c of hand) {
+        const v = checkAdd(m, [c]); if (!v.ok) continue;
+        const usesWild = wasPure && !v.pure;
+        let score = P.addBase + len * P.addLenW + (m.type === 'set' ? 4 : 0);
+        if (len + 1 === CFG.completeAt) score += P.completeW + (v.pure ? P.pureW : 0);
+        const act = { type: 'addToMeld', meldId: m.id, cardIds: [c.id] };
+        if (usesWild) {
+          if (!P.wildAdd) continue;
+          const finishing = len + 1 >= CFG.completeAt && !isComplete(m);
+          if (isComplete(m)) continue;                            // would turn a scored pure meld impure for nothing
+          if (!(finishing || (len >= P.wildAddLen && u > P.wildAddU) || u > P.wildAddAny)) continue;
+          score -= 55; act.confirmImpure = true;
+        }
+        moves.push({ score, act });
+      }
+    }
+    const handHasWild = hand.some(isWildType);
+    for (const g of findNewMeldsAll(hand, sets, P)) {
+      if (!checkNewMeld(g, sets).ok) continue;
+      moves.push({ score: P.newBase + g.length * P.newLenW, act: { type: 'newMeld', cardIds: g.map((c) => c.id) } });
+    }
+    if (P.wildNew && handHasWild && (hand.length >= P.wildNewHand || u > P.wildNewU || T.deckStatus === 'unclaimed' && hand.length <= 5)) {
+      for (const g of findWildMelds(hand, sets)) moves.push({ score: P.wildNewBase + g.length * 10, act: { type: 'newMeld', cardIds: g.map((c) => c.id) } });
+    }
+    moves.sort((a, b) => b.score - a.score);
+    return moves;
+  }
+
+  // How much the player wants to keep a card: part of a meld in the making, a wildcard, or something
+  // the other team could use. The lowest value is thrown.
+  function smartDiscard(state, seat, P) {
+    const me = state.seats[seat], team = teamOf(seat), T = state.teams[team], O = state.teams[1 - team], u = urgency(state);
+    let best = null;
+    for (const c of me.hand) {
+      let keep = 0;
+      if (isWildType(c)) keep += P.spendWild ? P.wildKeep * (1 - u) + P.wildBase : 100;
+      else {
+        for (const o of me.hand) {
+          if (o.id === c.id || isWildType(o)) continue;
+          if (o.r === c.r) keep += P.sameRankW;
+          if (o.s === c.s) { const d = Math.abs(o.r - c.r); const dd = (o.r === 1 || c.r === 1) ? Math.min(d, 13 - d) : d; if (dd === 1) keep += P.adjW; else if (dd === 2) keep += P.gapW; }
+        }
+        if (T.melds.some((m) => checkAdd(m, [c]).ok)) keep += P.fitW;
+        if (P.danger && O.melds.some((m) => checkAdd(m, [c]).ok)) keep += P.dangerW;       // would feed the other team
+      }
+      if (!best || keep < best.keep) best = { keep, id: c.id };
+    }
+    return best && best.id;
+  }
+
+  function smartDraw(state, seat, simulating, P) {
+    if (state.discard.length && !state.pileRefused) {
+      const test = clone(state);
+      if (apply(test, seat, { type: 'pickup' }).ok && findUseFor(test, seat, test.mustUse, P.pickTier)) {
+        if (!CFG.botPilePayoff || simulating || pilePaysOff(state, seat).ok) return { type: 'pickup' };
+      }
+    }
+    if (!state.stack.length) return { type: 'endGame' };
+    return { type: 'draw' };
+  }
+
+  function botSmart(state, seat, simulating) {
+    if (state.phase === 'over' || state.turn !== seat) return null;
+    const me = state.seats[seat], team = teamOf(seat), P = smartParams(state, seat);
+    if (state.phase === 'draw') return smartDraw(state, seat, simulating, P);
+    if (state.mustUse) return findUseFor(state, seat, state.mustUse) || { type: 'returnPile' };
+    const mayWin = !P.goOutCheck || !canGoOut(state, team) || goOutWins(state, seat);
+    for (const mv of smartMeldMoves(state, seat, P)) {
+      if (!mayWin && me.hand.length - mv.act.cardIds.length < 2) continue;        // keep a card rather than end a losing game
+      if (!tryOn(state, seat, mv.act)) continue;
+      if (P.goOutCheck && endsGameBadly(state, seat, mv.act)) continue;
+      return mv.act;
+    }
+    if (state.finalTurn) return { type: 'endGame' };
+    const ordered = [smartDiscard(state, seat, P)].concat(me.hand.map((c) => c.id));
+    for (const id of ordered) {
+      const act = { type: 'discard', cardId: id };
+      if (!tryOn(state, seat, act)) continue;
+      if (P.goOutCheck && endsGameBadly(state, seat, act) && me.hand.length > 1) continue;
+      return act;
+    }
+    return { type: 'discard', cardId: me.hand[0].id };
+  }
+
+  function botNextAction(state, seat, simulating) {
+    return state.seats[seat] && state.seats[seat].level === 'easy' ? botEasy(state, seat, simulating) : botSmart(state, seat, simulating);
   }
 
   return {

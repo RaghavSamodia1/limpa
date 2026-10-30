@@ -4,10 +4,11 @@
 const E = require('../js/engine.js');
 
 const GAMES = +process.argv[2] || 200;
+const LEVELS = ['smart', 'easy'];
 let outs = 0, stacks = 0, draws = 0;
 
 for (let g = 0; g < GAMES; g++) {
-  const G = E.createGame({ seats: [0, 1, 2, 3].map((i) => ({ name: 'P' + i, bot: true })) });
+  const G = E.createGame({ seats: [0, 1, 2, 3].map((i) => ({ name: 'P' + i, bot: true, level: LEVELS[(g + i) % 2 === 0 ? 0 : 1] })) });
   let steps = 0;
   while (G.phase !== 'over') {
     if (++steps > 4000) throw new Error('game ' + g + ' did not finish');

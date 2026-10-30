@@ -13,6 +13,57 @@ const app = document.getElementById('app');
 /* Scene tuning: how far the table is tipped back and how strong the perspective is. */
 const TILT0 = 38, TILT_MIN = 14, PERSP = 1800;   // starting tilt; the table flattens as melds pile up
 
+/* ---------------- themes & saved settings ---------------- */
+const THEMES = [
+  { id:'felt', name:'Felt', a:'#2f9366', b:'#4a2a14', bar:'#12231d' },
+  { id:'cafe', name:'Café', a:'#e3c593', b:'#6b3d1c', bar:'#231712' },
+  { id:'midnight', name:'Midnight', a:'#dcbc88', b:'#3a4590', bar:'#171d38' },
+];
+const store = {
+  get(k) { try { return localStorage.getItem('limpa.' + k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem('limpa.' + k, v); } catch (e) {} },
+};
+function setTheme(id) {
+  const t = THEMES.find((x) => x.id === id) || THEMES[0];
+  document.documentElement.dataset.theme = t.id; store.set('theme', t.id);
+  const m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', t.bar);
+}
+setTheme(store.get('theme'));
+const themePicker = () => `<div class="themes" role="group" aria-label="Table colour">${THEMES.map((t) =>
+  `<button class="theme-btn ${document.documentElement.dataset.theme === t.id ? 'on' : ''}" data-act="theme" data-theme="${t.id}" aria-pressed="${document.documentElement.dataset.theme === t.id}">
+    <span class="sw" style="background:linear-gradient(135deg,${t.a} 50%,${t.b} 50%)"></span>${t.name}</button>`).join('')}</div>`;
+
+/* ---------------- sound: tiny synthesised effects, no audio files ---------------- */
+const Sound = (() => {
+  let ctx = null, on = store.get('sound') !== 'off';
+  const ac = () => {
+    if (!ctx) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  };
+  const tone = (c, f, at, dur, type, vol, to) => {
+    const o = c.createOscillator(), g = c.createGain(), t = c.currentTime + at;
+    o.type = type; o.frequency.setValueAtTime(f, t); if (to) o.frequency.exponentialRampToValueAtTime(to, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + dur + 0.02);
+  };
+  const fx = {
+    draw:  (c, v) => tone(c, 520, 0, .09, 'triangle', .12 * v, 760),
+    throw: (c, v) => tone(c, 240, 0, .12, 'sine', .2 * v, 110),
+    place: (c, v) => { tone(c, 660, 0, .12, 'triangle', .13 * v); tone(c, 880, .07, .16, 'triangle', .12 * v); },
+    error: (c, v) => tone(c, 170, 0, .22, 'sawtooth', .09 * v, 120),
+    turn:  (c, v) => { tone(c, 784, 0, .14, 'sine', .15 * v); tone(c, 1046, .1, .2, 'sine', .13 * v); },
+    win:   (c, v) => [523, 659, 784, 1046].forEach((f, i) => tone(c, f, i * .13, .28, 'triangle', .16 * v)),
+    lose:  (c, v) => [392, 330, 262].forEach((f, i) => tone(c, f, i * .18, .3, 'sine', .14 * v)),
+  };
+  return {
+    get on() { return on; },
+    play(name, quiet) { if (!on) return; const c = ac(); if (c && fx[name]) { try { fx[name](c, quiet ? .5 : 1); } catch (e) {} } },
+    toggle() { on = !on; store.set('sound', on ? 'on' : 'off'); if (on) this.play('turn'); },
+  };
+})();
+const soundBtn = () => `<button class="theme-btn" data-act="sound" aria-pressed="${Sound.on}"><span class="sw snd">${Sound.on ? '🔊' : '🔇'}</span>Sound ${Sound.on ? 'on' : 'off'}</button>`;
+
 const UI = {
   screen:'menu', lobby:null, G:null, viewer:null, cover:null, spinning:false,
   tilt:TILT0, sel:new Set(), order:{}, deadline:null, deadlineKey:null, botTimer:null,
@@ -74,7 +125,7 @@ function drawToasts() {
 /* ---------------- lobby & game flow ---------------- */
 function newLobby() {
   return {
-    gameId: genId(), teamNames: ['Bhujia','Kachori'],
+    gameId: genId(), teamNames: ['Bhujia','Kachori'], level: store.get('level') === 'easy' ? 'easy' : 'smart',
     seats: [
       { name:'You', avatar:'🥞', bot:false },
       { name:BOT_NAMES[0], avatar:'🍳', bot:true },
@@ -87,7 +138,7 @@ function newLobby() {
 function startGame() {
   const L = UI.lobby;
   clearTimeout(UI.botTimer); UI.botTimer = null;
-  UI.G = E.createGame({ gameId:L.gameId, teamNames:L.teamNames, seats:L.seats.map((s)=>({...s})) });
+  UI.G = E.createGame({ gameId:L.gameId, teamNames:L.teamNames, seats:L.seats.map((s)=>({...s, level:L.level})) });
   UI.screen = 'game'; UI.tilt = TILT0; UI.sel.clear(); UI.order = {}; UI.modal = null; UI.cover = null;
   UI.deadline = null; UI.deadlineKey = null;
   const hs = humans(); UI.viewer = hs.length ? hs[0] : 0;
@@ -118,7 +169,7 @@ function onTurnChange() {
   if (!G.seats[cur].bot) {
     if (hs.length > 1 && UI.viewer !== cur) UI.cover = cur;
     else UI.viewer = cur;
-    if (navigator.vibrate && UI.cover === null) { try { navigator.vibrate(40); } catch (e) {} }
+    if (UI.cover === null) { Sound.play('turn'); if (navigator.vibrate) { try { navigator.vibrate(40); } catch (e) {} } }
   }
   armTimer();
   scheduleBot();
@@ -145,14 +196,14 @@ function scheduleBot() {
     let r = E.apply(G, seat, act);
     if (!r.ok) r = E.apply(G, seat, { type: G.phase === 'draw' ? 'timeout' : 'discard', cardId: G.seats[seat].hand[0] && G.seats[seat].hand[0].id });
     after(r, seat, prevTurn, act && act.type);
-  }, 620);
+  }, 560);
 }
 
 function act(action, quiet) {
   const G = UI.G; const seat = G.turn;
   const prevTurn = G.turnNo;
   const r = E.apply(G, seat, action);
-  if (!r.ok) { if (!quiet) toast(r.error, 'err'); return r; }
+  if (!r.ok) { Sound.play('error'); if (!quiet) toast(r.error, 'err'); return r; }
   if (action.type === 'draw' || action.type === 'pickup') UI.deadline = null;
   if (action.type === 'pickup') UI.sel = new Set([G.mustUse]);
   else UI.sel.clear();
@@ -165,7 +216,7 @@ function addToMeld(meldId, cardIds, wildPos) {
   const r = act(action, true);
   if (r.ok) return r;
   if (r.code === 'confirmImpure') { UI.modal = { type:'confirmImpure', action }; render(); return r; }
-  toast(r.error, 'err'); UI.shake = '#meld-' + meldId; render();
+  Sound.play('error'); toast(r.error, 'err'); UI.shake = '#meld-' + meldId; render();
   return r;
 }
 
@@ -173,7 +224,10 @@ function after(r, seat, prevTurnNo, actType) {
   const G = UI.G;
   (r.events || []).forEach((e) => { if (e.kind === 'good' || e.kind === 'bad' || e.kind === 'warn') toast(e.text, e.kind === 'bad' ? 'err' : 'good'); });
   UI.actor = { seat, type: actType };
-  if (G.phase === 'over') { UI.modal = { type:'results' }; UI.deadline = null; render(); return; }
+  const quiet = seat !== UI.viewer;
+  Sound.play(actType === 'draw' || actType === 'pickup' || actType === 'timeout' ? 'draw' : actType === 'discard' ? 'throw' : actType === 'newMeld' || actType === 'addToMeld' ? 'place' : '', quiet);
+  (r.events || []).forEach((e) => { if (quiet && e.kind === 'info' && /picked up|returned the pile/.test(e.text)) toast(e.text); });
+  if (G.phase === 'over') { UI.modal = { type:'results' }; UI.deadline = null; Sound.play(G.result.winner === E.teamOf(UI.viewer) ? 'win' : G.result.winner === null ? 'turn' : 'lose'); render(); return; }
   if (G.turn !== seat || G.turnNo !== (prevTurnNo || G.turnNo)) onTurnChange();
   else { armTimer(); scheduleBot(); }
   render();
@@ -275,7 +329,7 @@ function snapshot() {
     cards[el.dataset.cid] = Object.assign(geom(el, z === 'hand'), { zone: z, html: z === 'top' || z === 'hist' ? el.outerHTML : null });
   });
   const stack = app.querySelector('.stackcard'), deck = app.querySelector('.zonewrap.own .dstack');
-  return { cards, stack: stack && geom(stack, false), deck: deck && geom(deck, false) };
+  return { viewer: UI.drawnViewer, cards, stack: stack && geom(stack, false), deck: deck && geom(deck, false) };
 }
 function launch(node, from, to, delay, fade, done) {
   const w = document.createElement('div'); w.className = 'fly';
@@ -290,7 +344,7 @@ function launch(node, from, to, delay, fade, done) {
 function flyCard(el, from, delay) {
   const cid = el.dataset.cid, to = geom(el, !!el.closest('.hand'));
   const node = el.cloneNode(true);
-  ['data-cid', 'data-act', 'data-drag', 'data-drop'].forEach((a) => node.removeAttribute(a));
+  ['data-cid', 'data-id', 'data-act', 'data-drag', 'data-drop', 'role', 'aria-label', 'aria-pressed'].forEach((a) => node.removeAttribute(a));
   node.classList.remove('sel', 'must', 'fresh', 'deal', 'can');
   FLY.set(cid, (FLY.get(cid) || 0) + 1); el.style.visibility = 'hidden';
   launch(node, from, to, delay, false, () => {
@@ -301,6 +355,7 @@ function flyCard(el, from, delay) {
 }
 function playFlights(before) {
   const actor = UI.actor; UI.actor = null;
+  if (before.viewer !== UI.viewer) return;     // the phone was passed: a different hand is on screen, nothing moved
   let src = null;
   if (actor && actor.seat !== UI.viewer) {
     const k = (actor.seat - UI.viewer + 4) % 4;
@@ -370,6 +425,7 @@ function render(carry) {
   // Too many melds for the mat: tip the table flatter (more depth per row) and lay it out again.
   if (UI.screen === 'game' && fitMelds() < .85 && UI.tilt > TILT_MIN) { UI.tilt = Math.max(TILT_MIN, UI.tilt - 6); render({ before }); return; }
   if (before) playFlights(before);
+  UI.drawnViewer = UI.viewer;
   hideFlying();
 }
 window.addEventListener('resize', () => { if (UI.screen === 'game') render(); });
@@ -384,7 +440,8 @@ function renderMenu() {
       <button class="btn" data-act="new">Start a new game</button>
       <button class="btn ghost" data-act="join">Join a game</button>
       <button class="btn ghost" data-act="rules">How to play</button>
-      <div class="muted" style="font-size:11px;text-align:center;text-shadow:0 1px 2px rgba(0,0,0,.6)">Prototype · 2v2 · pass-and-play &amp; computer seats</div>
+      ${themePicker()}
+      <div class="tagline">2 v 2 · play with friends on one phone, or against the computer</div>
     </div></div>`;
 }
 
@@ -415,7 +472,9 @@ function renderLobby() {
     <div class="gidrow"><span class="muted" style="font-size:12px">GAME ID</span><span class="gid">${esc(L.gameId)}</span>
       <button class="btn ghost sm" data-act="copy">📋 Copy</button></div>
     ${team(0)}${team(1)}
-    <div class="muted" style="font-size:11px;text-align:center">Seats alternate ${esc(L.teamNames[0])} → ${esc(L.teamNames[1])}. Online rooms switch on with Firebase; for now human seats share this phone.</div>
+    <div class="level" role="group" aria-label="Computer skill"><span>Computer players</span>
+      ${['easy','smart'].map((v) => `<button class="seg ${L.level === v ? 'on' : ''}" data-act="level" data-level="${v}" aria-pressed="${L.level === v}">${v === 'easy' ? 'Easy' : 'Smart'}</button>`).join('')}</div>
+    <div class="muted" style="font-size:11px;text-align:center">Seats alternate ${esc(L.teamNames[0])} → ${esc(L.teamNames[1])}. Teammates sit opposite each other. If you make more than one seat Human, you pass the phone between turns.</div>
     <button class="btn" data-act="play" ${ready?'':'disabled'} style="font-size:20px;padding:12px 40px">▶ Play</button>
     <button class="btn ghost sm" data-act="home">← Back</button>
   </div>`;
@@ -423,7 +482,7 @@ function renderLobby() {
 
 const stackEdge = (n) => {
   const k = Math.max(1, Math.min(6, Math.ceil(n / 6))); const s = [];
-  for (let i = 1; i <= k; i++) s.push(`${i}px ${i}px 0 ${i % 2 ? '#8e1424' : '#fff'}`);
+  for (let i = 1; i <= k; i++) s.push(`${i}px ${i}px 0 ${i % 2 ? 'var(--back-dark)' : '#fff'}`);
   return s.join(',');
 };
 
@@ -481,11 +540,9 @@ function renderGame() {
   else if (G.phase === 'over') hint = 'Game over';
   else if (!myTurn) hint = G.seats[G.turn].name + (G.seats[G.turn].bot ? ' is playing…' : "'s turn");
   else if (G.phase === 'draw') hint = G.finalTurn ? 'Final turn: use the pile or end' : 'Tap the stack or the top discard';
-  else if (G.mustUse) hint = 'Meld the glowing card first';
+  else if (G.mustUse) hint = 'Use the glowing card, or tap Return';
   else hint = 'Drag to a meld or the pile';
-  let ctaBtns = '';
-  if (myTurn && G.mustUse) ctaBtns += `<button class="btn ghost sm" data-act="returnPile">↩ Return pile</button>`;
-  if (myTurn && G.finalTurn && !G.mustUse) ctaBtns += `<button class="btn red sm" data-act="endGame">End game</button>`;
+  const returnBtn = myTurn && G.mustUse, endBtn = myTurn && G.finalTurn && !G.mustUse;
 
   const mid = `<div class="mid" id="piles" data-drop="discard">
       <svg class="dir" viewBox="0 0 64 38" aria-hidden="true"><path d="M7 34C12 10 50 4 57 26" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round"/><path d="M63 24 55 37 47 25z" fill="currentColor"/></svg>
@@ -507,9 +564,11 @@ function renderGame() {
   }
   const on = playPhase;
   const ctl = `<span class="ctl">
-      <button class="btn ghost" data-act="sort" ${showHand ? '' : 'disabled'} aria-label="Sort hand">⇅ Sort</button>
+      ${returnBtn ? `<button class="btn ghost" data-act="returnPile" aria-label="Return the pile and draw instead">↩ Return</button>`
+        : `<button class="btn ghost" data-act="sort" ${showHand ? '' : 'disabled'} aria-label="Sort hand">⇅ Sort</button>`}
       <button class="btn ${newValid ? 'green place' : ''}" data-act="newMeld" id="newBtn" ${on && selCards.length >= 3 ? '' : 'disabled'}>${newValid ? 'Place ✓' : 'New'}</button>
-      <button class="btn red" data-act="discard" ${on && !G.finalTurn && selCards.length === 1 && !G.mustUse ? '' : 'disabled'}>Throw</button>
+      ${endBtn ? `<button class="btn red" data-act="endGame">End game</button>`
+        : `<button class="btn red" data-act="discard" ${on && !G.finalTurn && selCards.length === 1 && !G.mustUse ? '' : 'disabled'}>Throw</button>`}
     </span>`;
 
   const showTimer = myTurn && G.phase === 'draw' && UI.deadline;
@@ -556,7 +615,7 @@ function renderGame() {
     </div>
     <div class="seats">${seatChip(seatAt(1), 'l')}${seatChip(seatAt(2), 't')}${seatChip(seatAt(3), 'r')}</div>
     <div class="dock">
-      <div class="cta"><span class="hint">${esc(hint)}</span>${ctaBtns}</div>
+      <div class="cta"><span class="hint">${esc(hint)}</span></div>
       <div class="actions">${meBlock}${ctl}</div>
       <div class="handwrap">${handHTML}</div>
     </div>
@@ -622,6 +681,7 @@ function renderModal() {
       ${G.seats.map((s,i)=>`<div class="seat-row" style="margin-bottom:6px"><div class="ava" style="width:32px;height:32px;font-size:17px;border-width:2px">${s.avatar}</div>
         <div style="flex:1;font-weight:700">${esc(s.name)} <span class="muted" style="font-size:11px">· ${esc(G.teams[s.team].name)}</span></div>
         <button class="toggle ${s.bot?'on':''}" data-act="seatBot" data-seat="${i}">${s.bot?'🤖 Computer':'🙂 Human'}</button></div>`).join('')}
+      <h3>Table colour &amp; sound</h3>${themePicker()}<div style="margin-top:8px" class="themes">${soundBtn()}</div>
       <div class="bigrow" style="justify-content:flex-start">
         <button class="btn ghost sm" data-act="rules">How to play</button>
         <button class="btn ghost sm" data-act="redeal">New deal</button>
@@ -716,7 +776,7 @@ app.addEventListener('click', (e) => {
     case 'doJoin': {
       const v = (document.getElementById('gidIn').value || '').trim().toUpperCase();
       UI.joinMsg = !/^LB-[A-Z0-9]{5}$/.test(v) ? 'That ID looks wrong. It should look like LB-7KQ2M.'
-        : 'Room lookup goes live once Firebase is connected. For now, start a new game and play pass-and-play on one device.';
+        : 'Online rooms are coming soon. For now, start a new game and play on one phone, with friends passing it round or with the computer.';
       render(); break;
     }
     case 'home': UI.screen = 'menu'; render(); break;
@@ -736,6 +796,9 @@ app.addEventListener('click', (e) => {
       (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(()=>toast('Invite copied','good')).catch(()=>toast('Game ID: '+UI.lobby.gameId));
       break;
     }
+    case 'sound': Sound.toggle(); render(); break;
+    case 'theme': setTheme(el.dataset.theme); render(); break;
+    case 'level': UI.lobby.level = el.dataset.level; store.set('level', UI.lobby.level); render(); break;
     case 'play': startGame(); break;
     case 'menu': UI.modal = { type:'menu' }; render(); break;
     case 'seatBot': {
