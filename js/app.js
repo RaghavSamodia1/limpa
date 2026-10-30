@@ -337,7 +337,7 @@ function launch(node, from, to, delay, fade, done) {
   w.appendChild(node); document.body.appendChild(w);
   const tf = (g, d) => `translate(${d ? g.cx - to.cx : 0}px,${d ? g.cy - to.cy : 0}px) rotate(${g.rot}deg) scale(${(g.pw / to.nw).toFixed(3)}) rotateX(${g.tilt}deg)`;
   const a = w.animate([{ transform: tf(from, true), opacity: 1 }, { transform: tf(to, false), opacity: fade ? 0 : 1 }],
-    { duration: 380, delay, easing: 'cubic-bezier(.22,.8,.3,1)', fill: 'both' });
+    { duration: 280, delay, easing: 'cubic-bezier(.23,1,.32,1)', fill: 'both' });
   const end = () => { w.remove(); if (done) done(); };
   a.finished.then(end, end);
 }
@@ -371,7 +371,7 @@ function playFlights(before) {
     if (prev) { if (prev.zone !== z && !(pile(prev.zone) && pile(z))) from = prev; }   // a discard just slides down the pile
     else if (z === 'hand') from = el.querySelector('.xd') ? before.deck : before.stack;
     else if (src) from = src;
-    if (from) flyCard(el, from, Math.min(n++, 14) * 30);
+    if (from) flyCard(el, from, Math.min(n++, 14) * 28);
   });
   if (!src) return;
   if (actor.type === 'draw' && before.stack) {            // a computer player draws: a card back goes to their hand
@@ -857,8 +857,9 @@ app.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id ==
 let drag = null;
 app.addEventListener('pointerdown', (e) => {
   const el = e.target.closest('[data-drag]');
-  if (!el || e.button > 0) return;
+  if (!el || e.button > 0 || drag) return;           // a second finger never starts or steals a drag
   drag = { el, id: el.dataset.id, x: e.clientX, y: e.clientY, active:false };
+  try { el.setPointerCapture(e.pointerId); } catch (err) {}
 });
 window.addEventListener('pointermove', (e) => {
   if (!drag) return;
