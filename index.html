@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+<meta name="theme-color" content="#12231d" />
+<meta name="description" content="Limpa's Breakfast: a 2v2 team card game. Play with friends on one phone, or against the computer." />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" type="image/png" href="icons/icon-192.png" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<meta name="apple-mobile-web-app-title" content="Limpa's" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<title>Limpa's Breakfast</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div id="app"></div>
+<div class="rotate"><div class="ph">📱</div><div class="logo" style="font-size:28px">Limpa's Breakfast</div><p>Turn your phone <b>upright</b> to play.</p></div>
+
+<!-- court-card art, referenced with <use> from the card faces -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="crownK" viewBox="0 0 32 22"><path d="M3 17 1 5l8 6 7-9 7 9 8-6-2 12z"/><rect x="3" y="18.5" width="26" height="3" rx="1.5"/><circle cx="1" cy="4" r="2"/><circle cx="16" cy="1.6" r="2"/><circle cx="31" cy="4" r="2"/></symbol>
+    <symbol id="crownQ" viewBox="0 0 32 22"><path d="M4 17 2 8l6 4 3-8 5 8 5-8 3 8 6-4-2 9z"/><rect x="4" y="18.5" width="24" height="3" rx="1.5"/><circle cx="2" cy="6.5" r="2"/><circle cx="11" cy="2.6" r="2"/><circle cx="21" cy="2.6" r="2"/><circle cx="30" cy="6.5" r="2"/></symbol>
+    <symbol id="capJ" viewBox="0 0 32 22"><path d="M3 18C3 9 10 5 19 6c6 .6 10 4 10 9v3z"/><path d="M17 6C21 0 28-1 31 2c-3 0-6 1-8 4z"/><rect x="3" y="18.5" width="26" height="3" rx="1.5"/></symbol>
+  </defs>
+</svg>
+
+<script src="js/engine.js"></script>
+<script src="js/app.js"></script>
+<script>
+if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function () {}); });
+</script>
+<noscript>Limpa's Breakfast needs JavaScript to run.</noscript>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "name": "limpas-breakfast",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Limpa's Breakfast: a 2v2 team card game.",
+  "scripts": {
+    "test": "node test/engine-smoke.js 200",
+    "arena": "node test/bot-arena.js 500 smart easy"
+  }
+}

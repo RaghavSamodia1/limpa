@@ -1,0 +1,1616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<meta name="theme-color" content="#1b1f45" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<title>Limpa's Breakfast — 2v2 Prototype</title>
+<style>
+:root{
+  --navy:#1b1f45; --navy2:#252a5c; --panel:#2d3370; --panel2:#363d82; --line:#4a52a3;
+  --orange:#ff8a1f; --yellow:#ffd23f; --red:#d7263d; --cream:#fffaf0; --ink:#1d1d2b;
+  --good:#3ddc97; --bad:#ff5c7a; --muted:#aab0e6; --wild:#6a3df0;
+  --appw:min(100vw,480px);
+  --mw:clamp(34px,calc(var(--appw)*.115),54px); --mh:calc(var(--mw)*1.38); --strip:calc(var(--mw)*.4);
+  --hw:clamp(40px,calc(var(--appw)*.145),66px); --hh:calc(var(--hw)*1.4);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#0f1230;color:#fff;font-family:"Nunito","Trebuchet MS",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;overflow:hidden;overscroll-behavior:none;-webkit-user-select:none;user-select:none}
+button{font:inherit;color:inherit;border:0;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:3px solid var(--yellow);outline-offset:2px}
+input{font:inherit;-webkit-user-select:text;user-select:text}
+#app{height:100vh;height:100dvh;width:var(--appw);margin:0 auto;position:relative;overflow:hidden;
+  background:radial-gradient(ellipse at 50% 45%,#2f3680 0%,#232965 55%,#1b1f45 100%)}
+
+.logo{font-weight:900;letter-spacing:.5px;line-height:1;text-align:center;color:var(--yellow);text-shadow:0 2px 0 var(--orange),0 4px 0 #c85a00,0 7px 0 #1e4fd8,0 9px 14px rgba(0,0,0,.45)}
+.logo small{display:block;font-size:.36em;color:#fff;text-shadow:none;letter-spacing:4px;margin-top:12px;opacity:.85}
+.suits{font-size:.5em;letter-spacing:6px;color:var(--orange);text-shadow:0 3px 0 #1e4fd8;margin-bottom:6px}
+
+.btn{background:linear-gradient(180deg,var(--yellow),var(--orange));color:var(--ink);font-weight:800;padding:10px 18px;border-radius:14px;box-shadow:0 4px 0 #b05200,0 6px 14px rgba(0,0,0,.35);transition:transform .08s}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 #b05200}
+.btn.ghost{background:var(--panel2);color:#fff;box-shadow:0 4px 0 #1a1e4d}
+.btn.red{background:linear-gradient(180deg,#ff6b7d,var(--red));color:#fff;box-shadow:0 4px 0 #8a1020}
+.btn:disabled{filter:grayscale(.8) brightness(.6);cursor:not-allowed;transform:none}
+.btn.sm{padding:6px 10px;border-radius:10px;font-size:13px}
+.panel{background:rgba(45,51,112,.85);border:1px solid var(--line);border-radius:16px}
+.muted{color:var(--muted)}
+.shake{animation:shake .45s}
+@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-7px)}40%{transform:translateX(7px)}60%{transform:translateX(-5px)}80%{transform:translateX(4px)}}
+@keyframes glow{0%,100%{box-shadow:0 0 0 2px var(--yellow),0 0 10px 2px rgba(255,210,63,.55)}50%{box-shadow:0 0 0 2px var(--orange),0 0 18px 5px rgba(255,138,31,.7)}}
+@keyframes deal{from{opacity:0;transform:translate(0,-45vh) rotate(25deg) scale(.6)}to{opacity:1}}
+@keyframes pop{0%{transform:scale(.3);opacity:0}80%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+
+/* menu / lobby */
+.screen{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom));overflow-y:auto}
+.menu-col{display:flex;flex-direction:column;gap:14px;width:min(300px,86%)}
+.lobby{justify-content:flex-start;gap:12px}
+.lobby .team{width:100%;padding:10px;display:flex;flex-direction:column;gap:8px}
+.lobby .team.t0{border-color:var(--orange)} .lobby .team.t1{border-color:#5aa2ff}
+.team-name{background:transparent;border:0;border-bottom:2px dashed var(--line);color:#fff;font-weight:900;font-size:19px;width:100%;padding:3px 2px}
+.seat{display:flex;align-items:center;gap:8px;background:var(--navy2);border-radius:12px;padding:7px}
+.seat input{flex:1;min-width:0;background:#1b1f45;border:1px solid var(--line);border-radius:8px;color:#fff;padding:7px 8px}
+.ava{width:38px;height:38px;border-radius:50%;background:var(--panel2);font-size:20px;display:flex;align-items:center;justify-content:center;border:2px solid var(--line);flex:none}
+.toggle{font-size:12px;font-weight:800;padding:6px 8px;border-radius:8px;background:#1b1f45;border:1px solid var(--line);min-width:88px}
+.toggle.on{background:var(--good);color:var(--ink);border-color:var(--good)}
+.gidrow{display:flex;align-items:center;gap:10px}
+.gid{font-size:24px;font-weight:900;letter-spacing:3px;color:var(--yellow)}
+.join input{background:#1b1f45;border:2px solid var(--line);border-radius:12px;color:#fff;padding:10px 12px;font-size:20px;letter-spacing:3px;text-transform:uppercase;width:100%;text-align:center}
+
+/* cards */
+.card{position:relative;flex:none;background:var(--cream);color:var(--ink);border-radius:6px;border:1px solid rgba(0,0,0,.18);
+  box-shadow:-1px 0 2px rgba(0,0,0,.25);font-weight:900;user-select:none;-webkit-user-select:none;line-height:1}
+.card.red{color:var(--red)}
+.card .cr{position:absolute;top:.12em;left:0;width:var(--sw);text-align:center;letter-spacing:-.06em;white-space:nowrap}
+.card .cs{position:absolute;top:1.08em;left:0;width:var(--sw);text-align:center;font-size:.92em}
+.card .cc{position:absolute;right:.12em;bottom:.02em;font-size:2.2em;opacity:.95}
+.card.joker .cr{color:var(--wild);font-size:.62em;writing-mode:vertical-rl;text-orientation:upright;letter-spacing:-.08em;top:.25em}
+.card.joker .cs{display:none}
+.card.joker .cc{color:var(--orange)}
+.card.wild{background:linear-gradient(160deg,#fffaf0 55%,#e2d8ff)}
+.card .rep{position:absolute;left:1px;bottom:3px;font-size:.5em;background:var(--wild);color:#fff;padding:1px 2px;border-radius:3px;font-weight:900}
+.card .xd{position:absolute;bottom:4px;left:4px;width:8px;height:8px;border-radius:50%;background:var(--orange)}
+
+/* table cards overlap so the left strip (rank over suit) shows; last card full */
+.tc{--sw:var(--strip);width:var(--mw);height:var(--mh);font-size:calc(var(--mw)*.36);margin-right:calc(var(--strip) - var(--mw))}
+.tc:last-child{margin-right:0}
+.tc .cc{font-size:1.75em;right:.1em}
+.hc{--sw:calc(var(--hw)*.42);position:absolute;top:0;width:var(--hw);height:var(--hh);font-size:calc(var(--hw)*.36);transition:transform .12s;touch-action:none;cursor:grab}
+.hc .cc{font-size:1.85em;right:.1em}
+.hc.sel{transform:translateY(-14px);box-shadow:0 0 0 3px var(--yellow),0 6px 10px rgba(0,0,0,.5)}
+.hc.must{animation:glow 1.1s infinite;transform:translateY(-14px)}
+.hc.fresh::after{content:"NEW";position:absolute;top:-9px;left:2px;background:var(--good);color:var(--ink);font-size:9px;padding:1px 4px;border-radius:5px}
+.hc.deal{animation:deal .45s both}
+.back{background:repeating-linear-gradient(45deg,#c81d33 0 6px,#b0172b 6px 12px);border:3px solid #fff;border-radius:7px;box-shadow:0 2px 5px rgba(0,0,0,.4);position:relative;flex:none}
+.back::after{content:"LB";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--yellow);font-weight:900;font-size:14px;text-shadow:0 2px 0 #1e4fd8}
+
+/* game layout (portrait) */
+.game{position:absolute;inset:0;display:flex;flex-direction:column;padding:max(4px,env(safe-area-inset-top)) 6px 0}
+.bar{display:flex;align-items:center;gap:5px;flex:none;min-height:34px;min-width:0}
+.score{display:flex;align-items:center;gap:6px;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:3px 9px;font-weight:900;font-size:14px;white-space:nowrap}
+.score .n{color:var(--yellow);font-size:16px}
+.score.t0 .tn{color:var(--orange)} .score.t1 .tn{color:#7db6ff}
+.pls{display:flex;gap:4px}
+.pl{position:relative}
+.pl .ava{width:26px;height:26px;font-size:14px;border-width:2px}
+.pl.turn .ava{animation:glow 1.1s infinite;border-color:var(--yellow)}
+.pl .bot{position:absolute;right:-5px;bottom:-4px;font-size:10px}
+.xdeck{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--muted);white-space:nowrap}
+.xdeck .back{width:15px;height:21px;border-width:2px;border-radius:3px}
+.xdeck .back::after{font-size:5px}
+.spacer{flex:1}
+.iconbtn{width:34px;height:32px;border-radius:9px;background:var(--panel2);font-size:16px;flex:none}
+.chip{background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:10px;padding:4px 8px;font-weight:800;font-size:12px;white-space:nowrap}
+.chip.timer{color:var(--yellow)} .chip.timer.low{color:var(--bad);border-color:var(--bad)}
+
+.area{flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;border-radius:12px;border:1px solid rgba(255,255,255,.08);padding:12px 6px 8px;position:relative;margin:4px 0}
+.area.opp{flex-grow:1}
+.area.own{flex-grow:1.25;background:rgba(255,138,31,.05);border-color:rgba(255,138,31,.25)}
+.area .lbl{position:absolute;right:8px;bottom:4px;font-size:10px;letter-spacing:1px;color:rgba(255,255,255,.25);font-weight:900;text-transform:uppercase;pointer-events:none}
+.melds{display:flex;flex-wrap:wrap;gap:14px 10px;align-items:flex-start}
+.meld{display:flex;position:relative;padding:2px;border-radius:8px;border:1px solid transparent;cursor:pointer}
+.meld.dropok{border:1px dashed rgba(255,210,63,.45)}
+.meld.hover{animation:glow 1s infinite}
+.meld.locked{background:rgba(255,210,63,.15);border-color:rgba(255,210,63,.6)}
+.meld .badge{position:absolute;top:-10px;right:-4px;font-size:9px;font-weight:900;padding:1px 5px;border-radius:7px;background:var(--panel2);border:1px solid var(--line);z-index:3;white-space:nowrap}
+.meld.pure .badge{background:var(--good);color:var(--ink);border-color:var(--good)}
+.meld.impure .badge{background:#9b7bff;color:#fff;border-color:#9b7bff}
+.meld.timpa .badge{background:var(--yellow);color:var(--ink);border-color:var(--yellow)}
+.insbar{position:absolute;top:0;bottom:0;width:4px;margin-left:-2px;border-radius:3px;background:var(--yellow);box-shadow:0 0 8px 2px rgba(255,210,63,.8);z-index:4;pointer-events:none}
+.insbar span{position:absolute;bottom:-15px;left:50%;transform:translateX(-50%);font-size:9px;font-weight:900;background:var(--yellow);color:var(--ink);padding:0 4px;border-radius:4px;white-space:nowrap}
+.empty{color:var(--muted);font-size:12px;padding:4px}
+
+.piles{flex:none;display:flex;align-items:center;gap:8px;padding:6px;border-radius:12px;background:rgba(0,0,0,.18);border:1px dashed transparent;position:relative}
+.piles.hover{border-color:var(--yellow)}
+.stackwrap{position:relative;flex:none}
+.stackcard{width:var(--mw);height:var(--mh)}
+.stackcard.can,.topdis.can{animation:glow 1.1s infinite;cursor:pointer}
+.stackwrap .cnt{position:absolute;right:-6px;bottom:-5px;background:#555b8f;color:#fff;font-size:11px;font-weight:900;border-radius:6px;padding:1px 5px}
+.topdis{--sw:var(--strip);width:var(--mw);height:var(--mh);font-size:calc(var(--mw)*.36)}
+.slot{width:var(--mw);height:var(--mh);border:2px dashed var(--line);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--muted);text-align:center;flex:none}
+.history{display:flex;flex:1;min-width:0;overflow-x:auto;padding-right:4px;scrollbar-width:none}
+.history::-webkit-scrollbar{display:none}
+.history .tc{--mw:calc(var(--appw)*.085);width:var(--mw);height:calc(var(--mw)*1.38);font-size:calc(var(--mw)*.36);--strip:calc(var(--mw)*.42);margin-right:calc(var(--mw)*-.58)}
+.pilectl{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:none;max-width:42%}
+.hint{font-size:11px;color:var(--yellow);text-align:right;line-height:1.2}
+.pilelbl{font-size:10px;letter-spacing:1px;color:rgba(255,255,255,.3);font-weight:900}
+
+.ctl{display:flex;gap:6px}
+.ctl .btn{padding:6px 10px;font-size:13px;border-radius:10px}
+.ctl .btn.ghost{padding:6px 8px}
+.btn.place{animation:glow 1.1s infinite}
+.handwrap{flex:none;position:relative;margin:2px -6px 0;padding:16px 6px max(6px,env(safe-area-inset-bottom));background:rgba(0,0,0,.28);border-top:1px solid rgba(255,255,255,.08)}
+.hand{position:relative}
+.hand .hidden{display:flex;align-items:center;gap:10px;height:var(--hh)}
+.hand .hidden .back{width:var(--hw);height:var(--hh)}
+@media (max-width:370px){.score{padding:3px 6px;font-size:13px}.ctl .btn{padding:6px 8px}.pl .ava{width:24px;height:24px}}
+
+/* overlays */
+.ov{position:absolute;inset:0;background:rgba(10,12,35,.84);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:50;padding:12px}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px 16px;width:100%;max-width:440px;max-height:90dvh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.5)}
+.modal h2{margin:0 0 8px;font-size:19px}
+.modal h3{margin:12px 0 4px;font-size:14px;color:var(--yellow)}
+.modal p,.modal li{font-size:13px;line-height:1.45}
+.modal ul{padding-left:18px;margin:4px 0}
+.passbox{text-align:center}
+.passbox .ava{width:76px;height:76px;font-size:42px;margin:6px auto 10px}
+.spinner .ava{width:84px;height:84px;font-size:46px;margin:8px auto;animation:pop .2s}
+.bigrow{display:flex;align-items:center;gap:10px;margin:12px 0 0;flex-wrap:wrap;justify-content:center}
+.bigmeld{display:flex;flex-wrap:wrap;gap:10px 0;padding:12px 2px 6px}
+.bigmeld .tc{--mw:54px;--strip:22px}
+.optrow{display:flex;flex-direction:column;gap:10px;margin-top:8px}
+.opt{display:flex;align-items:center;gap:12px;padding:8px;border-radius:12px;background:var(--navy2);border:2px solid var(--line);text-align:left}
+.opt:hover,.opt:focus-visible{border-color:var(--yellow)}
+.opt .cards{display:flex;flex:none}
+table.res{border-collapse:collapse;width:100%;font-size:12.5px;margin-top:6px}
+table.res th,table.res td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:right}
+table.res th:first-child,table.res td:first-child{text-align:left}
+table.res tr.tot td{font-weight:900;font-size:16px;color:var(--yellow);border-bottom:0}
+.winner{font-size:23px;font-weight:900;text-align:center;margin:2px 0}
+.dragghost{position:fixed;pointer-events:none;z-index:100;transform:translate(-50%,-120%) rotate(-4deg);filter:drop-shadow(0 8px 10px rgba(0,0,0,.5))}
+.dragghost .card{position:relative}
+.dragghost .n{position:absolute;top:-8px;right:-8px;background:var(--yellow);color:var(--ink);font-weight:900;border-radius:10px;padding:1px 6px;font-size:12px}
+#toast{position:absolute;left:50%;bottom:calc(var(--hh) + 90px);transform:translateX(-50%);z-index:60;width:max-content;max-width:92%;pointer-events:none}
+#toast div{background:rgba(20,22,55,.96);border:1px solid var(--line);border-radius:12px;padding:7px 12px;font-size:12.5px;font-weight:700;margin-top:6px;animation:pop .25s;text-align:center}
+#toast .err{border-color:var(--bad);color:#ffd0d8}
+#toast .good{border-color:var(--good)}
+
+.rotate{display:none}
+@media (orientation:landscape) and (max-height:520px){
+  .rotate{display:flex;position:fixed;inset:0;z-index:200;background:var(--navy);flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:30px;gap:12px}
+  .rotate .ph{font-size:56px;transform:rotate(-90deg);animation:rot 1.8s infinite}
+}
+@keyframes rot{0%,30%{transform:rotate(-90deg)}60%,100%{transform:rotate(0)}}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="rotate"><div class="ph">📱</div><div class="logo" style="font-size:28px">Limpa's Breakfast</div><p>Turn your phone <b>upright</b> to play.</p></div>
+
+<script>
+/*!
+ * Limpa's Breakfast — Rules Engine (2v2)
+ * Pure, serialisable game logic. Runs in the browser today and can be moved
+ * unchanged into a Firebase Cloud Function (server-authoritative) later.
+ */
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.LimpaEngine = api;
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  const CFG = {
+    players: 4, handSize: 13, extraDeckSize: 11, completeAt: 7, maxLen: 13, maxSets: 3, maxWilds: 1,
+    pts: { pure: 200, impure: 100, timpa: 500, goOut: 100, deckPenalty: -100 },
+    drawSeconds: 60,
+    // Computer players only build sets from edge ranks; middle ranks (5-10) are kept for sequences.
+    botSetRanks: [1, 13, 12, 11, 3, 4],
+    // Computer players: picking up the pile for a low-value use of the top card (adding it to a
+    // completed impure meld, or a new impure meld built with a wildcard from hand) is only allowed
+    // if another pile card also gets melded that turn, or the player goes out. false = old behaviour.
+    botPilePayoff: true,
+  };
+  const WILD_ERR = 'Only one wildcard (Joker or 2) is allowed per meld.';
+  const SUITS = ['S', 'H', 'D', 'C'];
+  const SUIT_SYM = { S: '♠', H: '♥', D: '♦', C: '♣', J: '★' };
+  const RANK_TXT = { 1: 'A', 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
+
+  const rankTxt = (r) => RANK_TXT[r] || String(r);
+  const cardName = (c) => (c.s === 'J' ? 'Joker' : rankTxt(c.r) + SUIT_SYM[c.s]);
+  const isWildType = (c) => c.s === 'J' || c.r === 2;
+  const teamOf = (seat) => seat % 2;
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+
+  function shuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function buildCards() {
+    const cards = []; let id = 0;
+    for (let d = 0; d < 2; d++) {
+      for (const s of SUITS) for (let r = 1; r <= 13; r++) cards.push({ id: 'c' + id++, s, r });
+      cards.push({ id: 'c' + id++, s: 'J', r: 0 });
+      cards.push({ id: 'c' + id++, s: 'J', r: 0 });
+    }
+    return cards; // 108
+  }
+
+  /* ---------------- Meld validation ---------------- */
+  const isNaturalAt = (c, r, suit) => c.s === suit && (c.r === r || (c.r === 1 && r === 14));
+
+  function validateSeq(slots, suit) {
+    if (slots.length < 3) return { ok: false, error: 'A meld needs at least 3 cards.' };
+    let wilds = 0, nat = 0;
+    const has = new Set();
+    for (let i = 0; i < slots.length; i++) {
+      const { c, r } = slots[i];
+      if (r < 1 || r > 14) return { ok: false, error: 'The sequence runs past the Ace.' };
+      if (i > 0 && r !== slots[i - 1].r - 1) return { ok: false, error: 'That would leave a gap in the sequence.' };
+      has.add(r);
+      if (isNaturalAt(c, r, suit)) { nat++; continue; }
+      if (isWildType(c)) { wilds++; continue; }
+      return { ok: false, error: cardName(c) + " doesn't fit this " + SUIT_SYM[suit] + ' sequence.' };
+    }
+    if (has.has(14) && has.has(1)) return { ok: false, error: "Sequences can't wrap around (K-A-2)." };
+    if (wilds > CFG.maxWilds) return { ok: false, error: WILD_ERR };
+    if (nat < 1) return { ok: false, error: 'A meld needs natural cards.' };
+    return { ok: true, pure: wilds === 0, wilds };
+  }
+
+  function permutations(arr) {
+    if (arr.length <= 1) return [arr.slice()];
+    const out = [];
+    arr.forEach((x, i) => {
+      const rest = arr.slice(0, i).concat(arr.slice(i + 1));
+      for (const p of permutations(rest)) out.push([x].concat(p));
+    });
+    return out;
+  }
+
+  // Best valid arrangement of `cards` as a sequence of `suit`. Existing cards keep
+  // their place where possible; a displaced wildcard prefers the low end, then the high end.
+  function arrangeSeq(cards, suit, prevSlots, accept, collect) {
+    const L = cards.length;
+    if (L < 3) return { ok: false, error: 'A meld needs at least 3 cards.' };
+    if (L > CFG.maxLen) return { ok: false, error: 'A sequence can hold at most 13 cards.' };
+    const fixed = cards.filter((c) => !isWildType(c));
+    const flex = cards.filter(isWildType);
+    for (const c of fixed) if (c.s !== suit) return { ok: false, error: cardName(c) + " isn't " + SUIT_SYM[suit] + '.' };
+    if (flex.length > CFG.maxWilds + 1) return { ok: false, error: WILD_ERR };
+    const prev = {};
+    (prevSlots || []).forEach((s) => { prev[s.c.id] = s.r; });
+    let best = null, lastErr = 'These cards do not form a valid sequence.';
+    for (let T = 14; T - L + 1 >= 1; T--) {
+      const lo = T - L + 1;
+      if (T === 14 && lo === 1) continue;
+      const pos = {};
+      let fail = false;
+      for (const c of fixed) {
+        let r = c.r;
+        if (c.r === 1) r = T === 14 ? 14 : 1;
+        if (r < lo || r > T || pos[r]) { fail = true; break; }
+        pos[r] = c;
+      }
+      if (fail) continue;
+      const free = [];
+      for (let r = T; r >= lo; r--) if (!pos[r]) free.push(r);
+      for (const perm of permutations(flex)) {
+        const slots = [];
+        for (let r = T; r >= lo; r--) slots.push({ c: pos[r] || perm[free.indexOf(r)], r });
+        const v = validateSeq(slots, suit);
+        if (!v.ok) { lastErr = v.error; continue; }
+        if (accept && !accept(slots)) { lastErr = 'The wildcard cannot go in that spot.'; continue; }
+        if (collect) collect.push({ slots, pure: v.pure });
+        let score = 0;
+        for (const s of slots) {
+          if (prev[s.c.id] !== undefined && prev[s.c.id] === s.r) score += 1000;
+          if (s.c.r === 2 && s.c.s === suit && s.r === 2) score += 100;
+        }
+        score -= T;
+        if (!best || score > best.score) best = { score, slots, pure: v.pure };
+      }
+    }
+    if (!best) return { ok: false, error: lastErr };
+    return { ok: true, slots: best.slots, pure: best.pure };
+  }
+
+  function validateSet(cards, rank) {
+    if (cards.length < 3) return { ok: false, error: 'A meld needs at least 3 cards.' };
+    if (cards.length > CFG.maxLen) return { ok: false, error: 'A meld can hold at most 13 cards.' };
+    let wilds = 0;
+    for (const c of cards) {
+      if (c.s !== 'J' && c.r === rank) continue;
+      if (isWildType(c)) { wilds++; continue; }
+      return { ok: false, error: cardName(c) + " doesn't match this set of " + rankTxt(rank) + 's.' };
+    }
+    if (wilds > CFG.maxWilds) return { ok: false, error: WILD_ERR };
+    return { ok: true, pure: wilds === 0 };
+  }
+
+  function setRankOf(cards) {
+    const nat = new Set(cards.filter((c) => !isWildType(c)).map((c) => c.r));
+    if (nat.size > 1) return null;
+    if (nat.size === 1) return [...nat][0];
+    return cards.some((c) => c.r === 2 && c.s !== 'J') ? 2 : null;
+  }
+
+  function wildSig(slots, ids) {
+    return slots.filter((x) => ids.includes(x.c.id)).map((x) => x.c.id + '@' + x.r).sort().join('|');
+  }
+
+  function newMeldOptions(cards, setsOnTable) {
+    const v = checkNewMeld(cards, setsOnTable);
+    if (!v.ok || v.meld.type !== 'seq') return [];
+    const ids = cards.filter(isWildType).map((c) => c.id);
+    if (!ids.length) return [];
+    const all = []; arrangeSeq(cards, v.meld.suit, null, null, all);
+    const seen = {}; const out = [];
+    for (const l of all) {
+      const sig = wildSig(l.slots, ids);
+      if (seen[sig]) continue; seen[sig] = 1;
+      out.push({
+        sig, pure: l.pure, suit: v.meld.suit,
+        label: l.slots.filter((x) => ids.includes(x.c.id)).map((x) =>
+          cardName(x.c) + (isNaturalAt(x.c, x.r, v.meld.suit) ? ' as itself' : ' as ' + rankTxt(x.r))).join(', '),
+        cards: l.slots.map((x) => ({ c: x.c, r: x.r })),
+      });
+    }
+    return out;
+  }
+
+  function checkNewMeld(cards, setsOnTable, choice) {
+    if (cards.length < 3) return { ok: false, error: 'Select at least 3 cards to start a meld.' };
+    let suits = [...new Set(cards.filter((c) => !isWildType(c)).map((c) => c.s))];
+    if (!suits.length) suits = [...new Set(cards.filter((c) => c.s !== 'J').map((c) => c.s))];
+    let seqErr = null;
+    if (suits.length === 1) {
+      const ids = cards.filter(isWildType).map((c) => c.id);
+      const a = arrangeSeq(cards, suits[0], null, choice ? (sl) => wildSig(sl, ids) === choice : null);
+      if (a.ok) return { ok: true, meld: { type: 'seq', suit: suits[0], slots: a.slots, pure: a.pure } };
+      seqErr = a.error;
+    }
+    const rank = setRankOf(cards);
+    if (rank !== null) {
+      const v = validateSet(cards, rank);
+      if (v.ok) {
+        if ((setsOnTable || 0) >= CFG.maxSets) return { ok: false, error: 'Your team already has 3 sets on the table.' };
+        return { ok: true, meld: { type: 'set', rank, cards: cards.slice(), pure: v.pure } };
+      }
+      if (!seqErr || v.error === WILD_ERR) seqErr = v.error;
+    }
+    return { ok: false, error: seqErr || 'These cards do not form a sequence or a set.' };
+  }
+
+  function meldCards(m) { return m.type === 'seq' ? m.slots.map((s) => s.c) : m.cards; }
+  function meldPure(m) {
+    return m.type === 'seq' ? validateSeq(m.slots, m.suit).pure : validateSet(m.cards, m.rank).pure;
+  }
+  function isTimpa(m) {
+    return m.type === 'seq' && m.slots.length === 13 && m.slots.every((s) => isNaturalAt(s.c, s.r, m.suit));
+  }
+  function isClosed(m) { return meldCards(m).length >= CFG.maxLen; }
+  function isComplete(m) { return meldCards(m).length >= CFG.completeAt; }
+  function countsPure(m) { return m.scored === 'timpa' || (m.scored !== 'impure' && meldPure(m)); }
+
+  function checkAdd(meld, cards, wildPos) {
+    if (!cards.length) return { ok: false, error: 'No cards selected.' };
+    if (isClosed(meld)) return { ok: false, error: isTimpa(meld) ? 'This Timpa is complete and locked.' : 'This meld has 13 cards and is closed.' };
+    if (meld.type === 'seq') {
+      const wild = cards.find(isWildType);
+      const ranks = meld.slots.map((x) => x.r);
+      const hi = Math.max(...ranks), lo = Math.min(...ranks);
+      let accept = null;
+      if (wild && wildPos) {
+        accept = (sl) => {
+          const r = sl.find((x) => x.c.id === wild.id).r;
+          if (wildPos === 'high') return r > hi;
+          if (wildPos === 'low') return r < lo;
+          return r < wildPos.below && r > wildPos.above;
+        };
+      }
+      const all = meldCards(meld).concat(cards);
+      const a = arrangeSeq(all, meld.suit, meld.slots, accept);
+      if (a.ok) return { ok: true, slots: a.slots, pure: a.pure };
+      if (wild && wildPos && arrangeSeq(all, meld.suit, meld.slots).ok)
+        return { ok: false, error: cardName(wild) + " can't go in that spot. Drop it at a valid end or gap." };
+      const displaced = meld.slots.find((x) => !isNaturalAt(x.c, x.r, meld.suit) &&
+        cards.some((c) => isNaturalAt(c, x.r, meld.suit)));
+      if (displaced) return { ok: false, error: 'No valid spot for the displaced ' + cardName(displaced.c) + ', so this move is blocked.' };
+      return a;
+    }
+    const all = meld.cards.concat(cards);
+    const v = validateSet(all, meld.rank);
+    return v.ok ? { ok: true, cards: all, pure: v.pure } : v;
+  }
+
+  function breaksPure(meld, result) {
+    return isComplete(meld) && countsPure(meld) && meld.scored !== 'timpa' && !result.pure;
+  }
+
+  /* ---------------- Game state ---------------- */
+  function createGame(opts) {
+    const o = opts || {};
+    const deck = shuffle(buildCards());
+    const seats = [0, 1, 2, 3].map((i) => ({
+      name: (o.seats && o.seats[i] && o.seats[i].name) || 'Player ' + (i + 1),
+      avatar: (o.seats && o.seats[i] && o.seats[i].avatar) || '🥞',
+      bot: !!(o.seats && o.seats[i] && o.seats[i].bot),
+      team: teamOf(i), hand: [],
+    }));
+    for (let k = 0; k < CFG.handSize; k++) for (let i = 0; i < 4; i++) seats[i].hand.push(deck.pop());
+    const teams = [0, 1].map((t) => ({
+      name: (o.teamNames && o.teamNames[t]) || (t === 0 ? 'Bhujia' : 'Kachori'),
+      deck: deck.splice(deck.length - CFG.extraDeckSize, CFG.extraDeckSize),
+      deckStatus: 'unclaimed', deckUsed: false, melds: [], penalties: [], bonus: 0,
+    }));
+    const discard = [deck.pop()];
+    const state = {
+      v: 1, gameId: o.gameId || null, seats, teams, stack: deck, discard,
+      turn: Math.floor(Math.random() * 4), phase: 'draw', turnNo: 0,
+      mustUse: null, pileBackup: null, drewFrom: null, pileRefused: false,
+      finalTurn: false, nextMeldId: 1, log: [], result: null,
+    };
+    startTurn(state, state.turn, []);
+    return state;
+  }
+
+  function teamScore(t) {
+    return t.melds.reduce((a, m) => a + (m.points || 0), 0) + t.bonus + t.penalties.reduce((a, p) => a + p.pts, 0);
+  }
+
+  function completedInfo(t) {
+    let count = 0, pure = 0;
+    for (const m of t.melds) {
+      if (!isComplete(m)) continue;
+      count++;
+      if (countsPure(m)) pure++;
+    }
+    return { count, pure };
+  }
+
+  function canGoOut(state, team) {
+    const t = state.teams[team];
+    if (t.deckStatus !== 'claimed' || !t.deckUsed) return false;
+    const ci = completedInfo(t);
+    return ci.count >= 2 && ci.pure >= 1;
+  }
+
+  function goOutBlockers(state, team) {
+    const t = state.teams[team]; const out = [];
+    if (t.deckStatus === 'forfeited') return ['your extra deck was forfeited, so your team cannot go out'];
+    if (t.deckStatus === 'unclaimed') out.push('claim your extra deck');
+    else if (!t.deckUsed) out.push('meld at least one extra-deck card');
+    const ci = completedInfo(t);
+    if (ci.count < 2) out.push('complete ' + (2 - ci.count) + ' more meld(s)');
+    if (ci.pure < 1) out.push('complete a pure meld');
+    return out;
+  }
+
+  function log(state, events, text, kind) {
+    const e = { text, kind: kind || 'info', turnNo: state.turnNo };
+    state.log.push(e); if (state.log.length > 60) state.log.shift();
+    events.push(e);
+  }
+
+  function startTurn(state, seat, events) {
+    state.turn = seat; state.phase = 'draw'; state.turnNo++;
+    state.mustUse = null; state.pileBackup = null; state.drewFrom = null; state.pileRefused = false;
+    state.finalTurn = state.stack.length === 0;
+    if (state.finalTurn) {
+      log(state, events, 'The centre stack is empty. ' + state.seats[seat].name + ' takes the final turn.', 'warn');
+      if (!state.discard.length) finish(state, events, 'stack');
+    }
+  }
+
+  function scoreMelds(state, team, events) {
+    const t = state.teams[team];
+    for (const m of t.melds) {
+      if (!isComplete(m)) continue;
+      if (!m.scored) {
+        if (isTimpa(m)) { m.scored = 'timpa'; m.points = CFG.pts.timpa; log(state, events, t.name + ' completed a TIMPA! +500', 'good'); }
+        else if (meldPure(m)) { m.scored = 'pure'; m.points = CFG.pts.pure; log(state, events, t.name + ' completed a pure meld +200', 'good'); }
+        else { m.scored = 'impure'; m.points = CFG.pts.impure; log(state, events, t.name + ' completed an impure meld +100', 'good'); }
+      } else if (m.scored !== 'timpa' && isTimpa(m)) {
+        const add = CFG.pts.timpa - m.points;
+        m.points = CFG.pts.timpa; m.scored = 'timpa';
+        log(state, events, t.name + ' upgraded a meld to a TIMPA! +' + add, 'good');
+      } else if (m.scored === 'pure' && !meldPure(m)) {
+        m.scored = 'impure'; m.points = CFG.pts.impure;
+        log(state, events, t.name + "'s pure meld became impure: 200 → 100", 'bad');
+      }
+    }
+  }
+
+  function checkStackEmpty(state, events) {
+    if (state.stack.length) return;
+    const pending = [0, 1].filter((i) => state.teams[i].deckStatus === 'unclaimed');
+    if (!pending.length) { log(state, events, 'The centre stack is empty and no extra decks remain.', 'warn'); return; }
+    for (const i of pending) {
+      const t = state.teams[i];
+      t.penalties.push({ reason: 'Extra deck forfeited (centre ran out)', pts: CFG.pts.deckPenalty });
+      t.deckStatus = 'forfeited';
+      state.stack.push(...t.deck); t.deck = [];
+      log(state, events, t.name + "'s unclaimed extra deck moved to the centre. −100", 'bad');
+    }
+    shuffle(state.stack);
+  }
+
+  function claimDeck(state, seat, events, sameTurn) {
+    const team = teamOf(seat); const t = state.teams[team];
+    const cards = t.deck.map((c) => Object.assign(c, { x: team }));
+    state.seats[seat].hand.push(...cards);
+    t.deck = []; t.deckStatus = 'claimed';
+    log(state, events, state.seats[seat].name + ' claimed ' + t.name + "'s extra deck" +
+      (sameTurn ? ' and keeps playing.' : ' (playable next turn).'), 'good');
+  }
+
+  function finish(state, events, reason, outSeat) {
+    for (const t of state.teams) {
+      if (t.deckStatus === 'unclaimed') { t.penalties.push({ reason: 'Extra deck never claimed', pts: CFG.pts.deckPenalty }); t.deckStatus = 'forfeited'; }
+      else if (t.deckStatus === 'claimed' && !t.deckUsed) t.penalties.push({ reason: 'No extra-deck card melded', pts: CFG.pts.deckPenalty });
+    }
+    if (reason === 'out') {
+      const t = state.teams[teamOf(outSeat)];
+      t.bonus += CFG.pts.goOut;
+      log(state, events, state.seats[outSeat].name + ' went out! ' + t.name + ' +100', 'good');
+    } else {
+      log(state, events, 'Game over: the centre stack ran out.', 'warn');
+    }
+    state.phase = 'over';
+    const scores = state.teams.map(teamScore);
+    state.result = {
+      reason, outSeat: outSeat === undefined ? null : outSeat, scores,
+      winner: scores[0] === scores[1] ? null : (scores[0] > scores[1] ? 0 : 1),
+      breakdown: state.teams.map((t) => ({
+        name: t.name,
+        completed: t.melds.filter((m) => m.scored).length,
+        pure: t.melds.filter((m) => m.scored === 'pure').length,
+        impure: t.melds.filter((m) => m.scored === 'impure').length,
+        timpas: t.melds.filter((m) => m.scored === 'timpa').length,
+        meldPoints: t.melds.reduce((a, m) => a + (m.points || 0), 0),
+        bonus: t.bonus, penalties: t.penalties.slice(), total: teamScore(t),
+      })),
+    };
+  }
+
+  function endTurn(state, events) {
+    scoreMelds(state, teamOf(state.turn), events);
+    if (state.phase === 'over') return;
+    if (state.finalTurn) { finish(state, events, 'stack'); return; }
+    startTurn(state, (state.turn + 1) % 4, events);
+  }
+
+  function takeFromHand(hand, ids) {
+    if (new Set(ids).size !== ids.length) return null;
+    const out = [];
+    for (const id of ids) {
+      const c = hand.find((x) => x.id === id);
+      if (!c) return null;
+      out.push(c);
+    }
+    return out;
+  }
+
+  function afterMeld(state, seat, events) {
+    const team = teamOf(seat); const t = state.teams[team];
+    const n = state.seats[seat].hand.length;
+    if (n === 0) {
+      if (t.deckStatus === 'unclaimed') { claimDeck(state, seat, events, true); return { ok: true }; }
+      if (canGoOut(state, team)) { scoreMelds(state, team, events); finish(state, events, 'out', seat); return { ok: true }; }
+      return { ok: false, error: "You can't empty your hand yet (" + goOutBlockers(state, team).join(', ') + '). Keep a card and discard instead.' };
+    }
+    if (n === 1 && t.deckStatus !== 'unclaimed' && !canGoOut(state, team) && !state.finalTurn) {
+      return { ok: false, error: 'That would leave one card and then an empty hand, but your team cannot go out yet (' +
+        goOutBlockers(state, team).join(', ') + '). Discard instead.' };
+    }
+    return { ok: true };
+  }
+
+  function markDeckUse(state, seat, cards) {
+    const team = teamOf(seat);
+    if (cards.some((c) => c.x === team)) state.teams[team].deckUsed = true;
+  }
+
+  /* ---------------- apply() ---------------- */
+  function apply(state, seat, action) {
+    const events = [];
+    if (!action || !action.type) return { ok: false, error: 'Unknown action.', events };
+    if (state.phase === 'over') return { ok: false, error: 'The game is over.', events };
+    if (seat !== state.turn) return { ok: false, error: "It isn't your turn.", events };
+    const snap = JSON.stringify(state);
+    const fail = (error, code) => {
+      const restored = JSON.parse(snap);
+      Object.keys(state).forEach((k) => delete state[k]);
+      Object.assign(state, restored);
+      return { ok: false, error, code, events: [] };
+    };
+    const me = state.seats[seat]; const team = teamOf(seat); const T = state.teams[team];
+
+    switch (action.type) {
+      case 'draw': {
+        if (state.phase !== 'draw') return fail('You have already drawn this turn.');
+        if (!state.stack.length) return fail('The centre stack is empty. Pick up the discard pile or end the game.');
+        const c = state.stack.pop(); me.hand.push(c);
+        state.phase = 'play'; state.drewFrom = 'stack'; state.lastDrawn = c.id;
+        log(state, events, me.name + ' drew from the centre.');
+        checkStackEmpty(state, events);
+        return { ok: true, events, drawn: c.id };
+      }
+      case 'pickup': {
+        if (state.phase !== 'draw') return fail('You have already drawn this turn.');
+        if (!state.discard.length) return fail('The discard pile is empty.');
+        if (state.pileRefused) return fail('You already returned the pile this turn. Draw from the centre.');
+        const top = state.discard[state.discard.length - 1];
+        state.pileBackup = state.discard.map((c) => c.id);
+        me.hand.push(...state.discard); state.discard = [];
+        state.mustUse = top.id; state.phase = 'play'; state.drewFrom = 'pile';
+        log(state, events, me.name + ' picked up the discard pile (' + state.pileBackup.length + ' cards).');
+        return { ok: true, events };
+      }
+      case 'returnPile': {
+        if (state.drewFrom !== 'pile' || !state.mustUse) return fail('Nothing to return.');
+        const back = state.pileBackup.map((id) => me.hand.find((c) => c.id === id));
+        me.hand = me.hand.filter((c) => !state.pileBackup.includes(c.id));
+        state.discard = back; state.mustUse = null; state.pileBackup = null;
+        state.drewFrom = null; state.phase = 'draw'; state.pileRefused = true;
+        log(state, events, me.name + " couldn't use the top card and returned the pile.", 'warn');
+        if (state.finalTurn) finish(state, events, 'stack');
+        return { ok: true, events };
+      }
+      case 'newMeld': {
+        if (state.phase !== 'play') return fail('Draw or pick up first.');
+        const ids = action.cardIds || [];
+        const cards = takeFromHand(me.hand, ids);
+        if (!cards) return fail('Those cards are not in your hand.');
+        if (state.mustUse && !ids.includes(state.mustUse)) return fail('First use the top card from the discard pile.');
+        const sets = T.melds.filter((m) => m.type === 'set').length;
+        const v = checkNewMeld(cards, sets, action.choice);
+        if (!v.ok) return fail(v.error);
+        const m = Object.assign({ id: 'm' + state.nextMeldId++, team, scored: null, points: 0 }, v.meld);
+        delete m.pure;
+        T.melds.push(m);
+        me.hand = me.hand.filter((c) => !ids.includes(c.id));
+        markDeckUse(state, seat, cards);
+        state.mustUse = null;
+        const r = afterMeld(state, seat, events);
+        if (!r.ok) return fail(r.error);
+        log(state, events, me.name + ' started a new ' + (m.type === 'seq' ? SUIT_SYM[m.suit] + ' sequence' : 'set of ' + rankTxt(m.rank) + 's') + '.');
+        return { ok: true, events, meldId: m.id };
+      }
+      case 'addToMeld': {
+        if (state.phase !== 'play') return fail('Draw or pick up first.');
+        const m = T.melds.find((x) => x.id === action.meldId);
+        if (!m) return fail("You can only add to your own team's melds.");
+        const ids = action.cardIds || [];
+        const cards = takeFromHand(me.hand, ids);
+        if (!cards) return fail('Those cards are not in your hand.');
+        if (state.mustUse && !ids.includes(state.mustUse)) return fail('First use the top card from the discard pile.');
+        const v = checkAdd(m, cards, action.wildPos);
+        if (!v.ok) return fail(v.error);
+        if (breaksPure(m, v) && !action.confirmImpure)
+          return fail('This wildcard will make your pure meld impure (200 → 100 at the end of your turn).', 'confirmImpure');
+        if (m.type === 'seq') m.slots = v.slots; else m.cards = v.cards;
+        me.hand = me.hand.filter((c) => !ids.includes(c.id));
+        markDeckUse(state, seat, cards);
+        state.mustUse = null;
+        const r = afterMeld(state, seat, events);
+        if (!r.ok) return fail(r.error);
+        log(state, events, me.name + ' added ' + cards.map(cardName).join(' ') + ' to a meld.');
+        if (isTimpa(m)) log(state, events, 'TIMPA! The ' + SUIT_SYM[m.suit] + ' sequence is complete and locked.', 'good');
+        return { ok: true, events };
+      }
+      case 'moveWild':
+        return fail('Wildcards only move when a natural card takes their spot.');
+      case 'discard': {
+        if (state.phase !== 'play') return fail('Draw or pick up first.');
+        if (state.mustUse) return fail('First use the top card from the discard pile (or return the pile).');
+        const i = me.hand.findIndex((c) => c.id === action.cardId);
+        if (i < 0) return fail('That card is not in your hand.');
+        const c = me.hand.splice(i, 1)[0];
+        state.discard.push(c);
+        log(state, events, me.name + ' discarded ' + cardName(c) + '.');
+        if (state.finalTurn) { scoreMelds(state, team, events); finish(state, events, 'stack'); return { ok: true, events }; }
+        if (me.hand.length === 0) {
+          if (T.deckStatus === 'unclaimed') claimDeck(state, seat, events, false);
+          else if (canGoOut(state, team)) { scoreMelds(state, team, events); finish(state, events, 'out', seat); return { ok: true, events }; }
+          else return fail("You can't empty your hand yet (" + goOutBlockers(state, team).join(', ') + ').');
+        }
+        endTurn(state, events);
+        return { ok: true, events };
+      }
+      case 'endGame': {
+        if (!state.finalTurn) return fail('You can only end the game on the final turn.');
+        if (state.mustUse) return fail('First use the top card (or return the pile).');
+        scoreMelds(state, team, events);
+        finish(state, events, 'stack');
+        return { ok: true, events };
+      }
+      case 'timeout': {
+        if (state.phase !== 'draw') return fail('Timer only applies to the draw step.');
+        log(state, events, me.name + ' ran out of time: auto draw & discard.', 'warn');
+        if (state.finalTurn || !state.stack.length) { finish(state, events, 'stack'); return { ok: true, events }; }
+        const c = state.stack.pop(); me.hand.push(c); state.phase = 'play'; state.drewFrom = 'stack';
+        checkStackEmpty(state, events);
+        me.hand = me.hand.filter((x) => x.id !== c.id); state.discard.push(c);
+        endTurn(state, events);
+        return { ok: true, events };
+      }
+      default: return fail('Unknown action.');
+    }
+  }
+
+  /* ---------------- Utilities ---------------- */
+  function redact(state, seat) {
+    const s = clone(state);
+    s.seats.forEach((p, i) => { if (i !== seat) { p.handCount = p.hand.length; p.hand = []; } });
+    s.stackCount = s.stack.length; s.stack = [];
+    s.teams.forEach((t) => { t.deckCount = t.deck.length; t.deck = []; });
+    return s;
+  }
+
+  function countCards(state) {
+    let n = state.stack.length + state.discard.length;
+    state.seats.forEach((p) => { n += p.hand.length; });
+    state.teams.forEach((t) => { n += t.deck.length; t.melds.forEach((m) => { n += meldCards(m).length; }); });
+    return n;
+  }
+
+  /* ---------------- Basic computer player ---------------- */
+  const goodSetRank = (r) => CFG.botSetRanks.includes(r);
+  function tryOn(state, seat, act) { return apply(clone(state), seat, act).ok; }
+
+  function combos(arr, k, cap) {
+    const out = [];
+    (function rec(start, cur) {
+      if (out.length >= cap) return;
+      if (cur.length === k) { out.push(cur.slice()); return; }
+      for (let i = start; i < arr.length; i++) { cur.push(arr[i]); rec(i + 1, cur); cur.pop(); }
+    })(0, []);
+    return out;
+  }
+
+  const TIER = { addPureSeq: 0, newPureSeq: 1, addPureSet: 2, newPureSet: 3, addImpureSeq: 4, newImpureSeq: 5, impureEdgeSet: 6, middleSet: 7, breakPure: 8 };
+
+  function rankAdd(m, v) {
+    if (breaksPure(m, v) || (countsPure(m) && !v.pure)) return TIER.breakPure;
+    if (m.type === 'set') {
+      if (!goodSetRank(m.rank)) return TIER.middleSet;
+      return v.pure ? TIER.addPureSet : TIER.impureEdgeSet;
+    }
+    return v.pure ? TIER.addPureSeq : TIER.addImpureSeq;
+  }
+  function rankNew(meld) {
+    if (meld.type === 'set') {
+      if (!goodSetRank(meld.rank)) return TIER.middleSet;
+      return meld.pure ? TIER.newPureSet : TIER.impureEdgeSet;
+    }
+    return meld.pure ? TIER.newPureSeq : TIER.newImpureSeq;
+  }
+
+  function findUseFor(state, seat, cardId, maxTier) {
+    const limit = maxTier === undefined ? TIER.breakPure : maxTier;
+    const me = state.seats[seat]; const T = state.teams[teamOf(seat)];
+    const card = me.hand.find((c) => c.id === cardId);
+    const cands = [];
+    for (const m of T.melds) {
+      const v = checkAdd(m, [card]);
+      if (!v.ok) continue;
+      const act = { type: 'addToMeld', meldId: m.id, cardIds: [cardId] };
+      const tier = rankAdd(m, v);
+      if (tier === TIER.breakPure) act.confirmImpure = true;
+      cands.push({ tier, act });
+    }
+    const others = me.hand.filter((c) => c.id !== cardId);
+    const near = others.filter((c) => isWildType(c) || (!isWildType(card) && (c.r === card.r || (c.s === card.s && Math.abs(c.r - card.r) <= 2))));
+    const sets = T.melds.filter((m) => m.type === 'set').length;
+    for (const pair of combos(near, 2, 400)) {
+      const cards = [card].concat(pair);
+      const v = checkNewMeld(cards, sets);
+      if (v.ok) cands.push({ tier: rankNew(v.meld), act: { type: 'newMeld', cardIds: cards.map((c) => c.id) } });
+    }
+    cands.sort((a, b) => a.tier - b.tier);
+    for (const c of cands) if (c.tier <= limit && tryOn(state, seat, c.act)) return c.act;
+    return null;
+  }
+
+  // Low-value use of the picked-up top card: adding it to a completed (7+) impure meld (scores
+  // nothing more), or starting a new impure meld that spends a wildcard from the hand.
+  function isLowValueUse(state, seat, act) {
+    const T = state.teams[teamOf(seat)];
+    if (act.type === 'addToMeld') {
+      const m = T.melds.find((x) => x.id === act.meldId);
+      return !!m && isComplete(m) && !countsPure(m);
+    }
+    if (act.type === 'newMeld') {
+      const hand = state.seats[seat].hand;
+      const cards = act.cardIds.map((id) => hand.find((c) => c.id === id));
+      const v = checkNewMeld(cards, T.melds.filter((m) => m.type === 'set').length);
+      if (!v.ok || v.meld.pure) return false;
+      return cards.some((c) => c.id !== state.mustUse && isWildType(c));
+    }
+    return false;
+  }
+
+  // Plays out the rest of this turn on a copy after picking up the pile and reports
+  // whether the low-value use pays off: another pile card gets melded, or the player goes out.
+  function pilePaysOff(state, seat) {
+    const s = clone(state);
+    if (!apply(s, seat, { type: 'pickup' }).ok) return { ok: false };
+    const pileIds = s.pileBackup.slice();
+    const topId = s.mustUse;
+    const first = findUseFor(s, seat, topId, TIER.impureEdgeSet);
+    if (!first) return { ok: false };
+    if (!isLowValueUse(s, seat, first)) return { ok: true, reason: 'good use' };
+    if (!apply(s, seat, first).ok) return { ok: false };
+    const turnNo = s.turnNo;
+    for (let i = 0; i < 40 && s.phase === 'play' && s.turn === seat && s.turnNo === turnNo; i++) {
+      const a = botNextAction(s, seat, true);
+      if (!a || a.type === 'discard' || a.type === 'endGame') {
+        if (a) apply(s, seat, a);
+        break;
+      }
+      if (!apply(s, seat, a).ok) break;
+    }
+    if (s.phase === 'over' && s.result && s.result.reason === 'out' && s.result.outSeat === seat) return { ok: true, reason: 'goes out' };
+    const melded = new Set();
+    s.teams[teamOf(seat)].melds.forEach((m) => meldCards(m).forEach((c) => melded.add(c.id)));
+    const others = pileIds.filter((id) => id !== topId && melded.has(id));
+    return others.length ? { ok: true, reason: 'other pile cards melded' } : { ok: false };
+  }
+
+  function findNewMelds(hand, setsOnTable) {
+    const seqs = [], sets = [];
+    const nat = hand.filter((c) => !isWildType(c));
+    for (const s of SUITS) {
+      const byRank = {};
+      nat.filter((c) => c.s === s).forEach((c) => { byRank[c.r] = byRank[c.r] || c; if (c.r === 1) byRank[14] = byRank[14] || c; });
+      let run = [];
+      for (let r = 14; r >= 0; r--) {
+        if (byRank[r] && !run.some((c) => c.id === byRank[r].id)) run.push(byRank[r]);
+        else { if (run.length >= 3) seqs.push(run.slice()); run = byRank[r] ? [byRank[r]] : []; }
+      }
+    }
+    if (setsOnTable < CFG.maxSets) {
+      const byR = {};
+      nat.forEach((c) => { (byR[c.r] = byR[c.r] || []).push(c); });
+      Object.keys(byR).forEach((r) => { if (byR[r].length >= 3 && goodSetRank(+r)) sets.push(byR[r]); });
+    }
+    seqs.sort((a, b) => b.length - a.length);
+    sets.sort((a, b) => b.length - a.length);
+    return seqs.concat(sets);
+  }
+
+  function hasSeqNeighbour(hand, c) {
+    return hand.some((o) => o.id !== c.id && !isWildType(o) && o.s === c.s && Math.abs(o.r - c.r) <= 2);
+  }
+
+  function discardChoice(state, seat) {
+    const me = state.seats[seat]; const T = state.teams[teamOf(seat)];
+    let best = null;
+    for (const c of me.hand) {
+      let score = 0;
+      if (isWildType(c)) score += 100;
+      for (const o of me.hand) {
+        if (o.id === c.id) continue;
+        if (o.r === c.r && c.s !== 'J') score += goodSetRank(c.r) ? 2 : 1;
+        if (o.s === c.s && c.s !== 'J' && Math.abs(o.r - c.r) <= 2) score += 3;
+      }
+      if (T.melds.some((m) => checkAdd(m, [c]).ok)) score += 40;
+      if (c.x !== undefined) score += 5;
+      if (!best || score < best.score) best = { score, id: c.id };
+    }
+    return best && best.id;
+  }
+
+  function botNextAction(state, seat, simulating) {
+    if (state.phase === 'over' || state.turn !== seat) return null;
+    const me = state.seats[seat]; const T = state.teams[teamOf(seat)];
+    if (state.phase === 'draw') {
+      if (state.discard.length && !state.pileRefused) {
+        const test = clone(state);
+        if (apply(test, seat, { type: 'pickup' }).ok && findUseFor(test, seat, test.mustUse, TIER.impureEdgeSet)) {
+          if (!CFG.botPilePayoff || simulating || pilePaysOff(state, seat).ok) return { type: 'pickup' };
+        }
+      }
+      if (!state.stack.length) return { type: 'endGame' };
+      return { type: 'draw' };
+    }
+    if (state.mustUse) return findUseFor(state, seat, state.mustUse) || { type: 'returnPile' };
+    const melds = T.melds.filter((m) => m.type === 'seq').concat(T.melds.filter((m) => m.type === 'set'));
+    for (const m of melds) {
+      const len = meldCards(m).length;
+      for (const c of me.hand) {
+        if (isWildType(c) && (len < 5 || countsPure(m))) continue;
+        if (m.type === 'set' && !goodSetRank(m.rank) && hasSeqNeighbour(me.hand, c)) continue;
+        const v = checkAdd(m, [c]);
+        if (!v.ok || breaksPure(m, v) || (countsPure(m) && !v.pure)) continue;
+        const act = { type: 'addToMeld', meldId: m.id, cardIds: [c.id] };
+        if (tryOn(state, seat, act)) return act;
+      }
+    }
+    const sets = T.melds.filter((m) => m.type === 'set').length;
+    for (const g of findNewMelds(me.hand, sets)) {
+      const act = { type: 'newMeld', cardIds: g.map((c) => c.id) };
+      if (checkNewMeld(g, sets).ok && tryOn(state, seat, act)) return act;
+    }
+    if (state.finalTurn) return { type: 'endGame' };
+    const ordered = [discardChoice(state, seat)].concat(me.hand.map((c) => c.id));
+    for (const id of ordered) {
+      const act = { type: 'discard', cardId: id };
+      if (tryOn(state, seat, act)) return act;
+    }
+    return { type: 'discard', cardId: me.hand[0].id };
+  }
+
+  return {
+    CFG, SUIT_SYM, rankTxt, cardName, isWildType, isNaturalAt, teamOf,
+    createGame, apply, checkNewMeld, newMeldOptions, checkAdd, meldCards, meldPure, isTimpa,
+    isClosed, isComplete, countsPure, breaksPure,
+    canGoOut, goOutBlockers, completedInfo, teamScore, redact, countCards,
+    botNextAction, pilePaysOff, validateSeq, arrangeSeq, validateSet,
+  };
+});
+
+</script>
+<script>
+(function () {
+'use strict';
+const E = window.LimpaEngine;
+const AVATARS = ['🥞','🍳','☕','🥐','🧇','🍩','🥟','🍪','🫖','🍯'];
+const BOT_NAMES = ['Arjun','Meera','Kabir','Zoya','Ishaan','Tara'];
+const SUIT_ORDER = { S:0, H:1, D:2, C:3, J:4 };
+const app = document.getElementById('app');
+
+const UI = {
+  screen:'menu', lobby:null, G:null, viewer:null, cover:null, spinning:false,
+  sel:new Set(), order:{}, deadline:null, deadlineKey:null, botTimer:null,
+  modal:null, shake:null, dealing:false, toasts:[], joinMsg:'',
+};
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const isRed = (c) => c.s === 'H' || c.s === 'D';
+function cardHTML(c, cls, extra, inner) {
+  if (c.s === 'J') return `<div class="card joker ${cls||''}" ${extra||''}><span class="cr">JOKER</span><span class="cc">★</span>${inner||''}</div>`;
+  const sym = E.SUIT_SYM[c.s];
+  return `<div class="card ${isRed(c)?'red':''} ${cls||''}" ${extra||''}><span class="cr">${E.rankTxt(c.r)}</span><span class="cs">${sym}</span><span class="cc">${sym}</span>${inner||''}</div>`;
+}
+function genId() { const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s=''; for (let i=0;i<5;i++) s+=a[Math.floor(Math.random()*a.length)]; return 'LB-'+s; }
+function humans() { return UI.G ? UI.G.seats.map((s,i)=>s.bot?null:i).filter((i)=>i!==null) : []; }
+function toast(text, kind) {
+  const id = Math.random();
+  UI.toasts.push({ id, text, kind });
+  if (UI.toasts.length > 2) UI.toasts.shift();
+  drawToasts();
+  setTimeout(() => { UI.toasts = UI.toasts.filter((t) => t.id !== id); drawToasts(); }, kind === 'err' ? 4000 : 2400);
+}
+function drawToasts() {
+  let el = document.getElementById('toast');
+  if (!el) { el = document.createElement('div'); el.id = 'toast'; el.setAttribute('aria-live','polite'); app.appendChild(el); }
+  el.innerHTML = UI.toasts.map((t) => `<div class="${t.kind||''}">${esc(t.text)}</div>`).join('');
+}
+
+function newLobby() {
+  return {
+    gameId: genId(), teamNames: ['Bhujia','Kachori'],
+    seats: [
+      { name:'You', avatar:'🥞', bot:false },
+      { name:BOT_NAMES[0], avatar:'🍳', bot:true },
+      { name:BOT_NAMES[1], avatar:'☕', bot:true },
+      { name:BOT_NAMES[2], avatar:'🥐', bot:true },
+    ],
+  };
+}
+
+function startGame() {
+  const L = UI.lobby;
+  clearTimeout(UI.botTimer); UI.botTimer = null;
+  UI.G = E.createGame({ gameId:L.gameId, teamNames:L.teamNames, seats:L.seats.map((s)=>({...s})) });
+  UI.screen = 'game'; UI.sel.clear(); UI.order = {}; UI.modal = null; UI.cover = null;
+  UI.deadline = null; UI.deadlineKey = null;
+  const hs = humans(); UI.viewer = hs.length ? hs[0] : 0;
+  UI.dealing = true; UI.spinning = true;
+  render();
+  setTimeout(() => { UI.dealing = false; }, 1600);
+  setTimeout(runSpinner, 900);
+}
+
+function runSpinner() {
+  const G = UI.G; let i = 0, ticks = 0;
+  const total = 14 + G.turn;
+  UI.modal = { type:'spin', seat:0 }; render();
+  const iv = setInterval(() => {
+    ticks++; i = (i + 1) % 4; UI.modal.seat = i;
+    if (ticks >= total) { clearInterval(iv); UI.modal.seat = G.turn; UI.modal.done = true; render();
+      setTimeout(() => { UI.modal = null; UI.spinning = false; onTurnChange(); render(); }, 1100);
+      return; }
+    render();
+  }, 110);
+}
+
+function onTurnChange() {
+  const G = UI.G; if (!G) return;
+  UI.sel.clear();
+  if (G.phase === 'over') { UI.modal = { type:'results' }; UI.deadline = null; return; }
+  const hs = humans(); const cur = G.turn;
+  if (!G.seats[cur].bot) {
+    if (hs.length > 1 && UI.viewer !== cur) UI.cover = cur;
+    else UI.viewer = cur;
+    if (navigator.vibrate && UI.cover === null) { try { navigator.vibrate(40); } catch (e) {} }
+  }
+  armTimer();
+  scheduleBot();
+}
+
+function armTimer() {
+  const G = UI.G;
+  if (!G || G.phase !== 'draw' || G.seats[G.turn].bot || UI.cover !== null || UI.spinning) return;
+  const key = G.turnNo + '-' + (G.pileRefused ? 1 : 0);
+  if (UI.deadlineKey === key) return;
+  UI.deadlineKey = key; UI.deadline = Date.now() + E.CFG.drawSeconds * 1000;
+}
+
+function scheduleBot() {
+  const G = UI.G;
+  if (!G || G.phase === 'over' || UI.botTimer || UI.spinning) return;
+  if (!G.seats[G.turn].bot) return;
+  UI.botTimer = setTimeout(() => {
+    UI.botTimer = null;
+    if (!UI.G || UI.G !== G || G.phase === 'over' || !G.seats[G.turn].bot) return;
+    const seat = G.turn;
+    const act = E.botNextAction(G, seat);
+    let r = E.apply(G, seat, act);
+    if (!r.ok) r = E.apply(G, seat, { type: G.phase === 'draw' ? 'timeout' : 'discard', cardId: G.seats[seat].hand[0] && G.seats[seat].hand[0].id });
+    after(r, seat);
+  }, 620);
+}
+
+function act(action, quiet) {
+  const G = UI.G; const seat = G.turn;
+  const prevTurn = G.turnNo;
+  const r = E.apply(G, seat, action);
+  if (!r.ok) { if (!quiet) toast(r.error, 'err'); return r; }
+  if (action.type === 'draw' || action.type === 'pickup') UI.deadline = null;
+  if (action.type === 'pickup') UI.sel = new Set([G.mustUse]);
+  else UI.sel.clear();
+  after(r, seat, prevTurn);
+  return r;
+}
+
+function addToMeld(meldId, cardIds, wildPos) {
+  const action = { type:'addToMeld', meldId, cardIds, wildPos };
+  const r = act(action, true);
+  if (r.ok) return r;
+  if (r.code === 'confirmImpure') { UI.modal = { type:'confirmImpure', action }; render(); return r; }
+  toast(r.error, 'err'); UI.shake = '#meld-' + meldId; render();
+  return r;
+}
+
+function after(r, seat, prevTurnNo) {
+  const G = UI.G;
+  (r.events || []).forEach((e) => { if (e.kind === 'good' || e.kind === 'bad' || e.kind === 'warn') toast(e.text, e.kind === 'bad' ? 'err' : 'good'); });
+  if (G.phase === 'over') { UI.modal = { type:'results' }; UI.deadline = null; render(); return; }
+  if (G.turn !== seat || G.turnNo !== (prevTurnNo || G.turnNo)) onTurnChange();
+  else { armTimer(); scheduleBot(); }
+  render();
+}
+
+setInterval(() => {
+  const G = UI.G;
+  if (!G || UI.screen !== 'game' || !UI.deadline || G.phase !== 'draw' || UI.cover !== null) return;
+  const left = Math.max(0, Math.ceil((UI.deadline - Date.now()) / 1000));
+  const el = document.getElementById('timer');
+  if (el) { el.textContent = '⏱ ' + left + 's'; el.classList.toggle('low', left <= 10); }
+  if (left <= 0) {
+    UI.deadline = null;
+    toast("Time's up: auto draw & discard.", 'err');
+    const seat = G.turn; const r = E.apply(G, seat, { type:'timeout' });
+    after(r, seat, -1);
+  }
+}, 250);
+
+function sortIds(hand) {
+  return hand.slice().sort((a,b) => (SUIT_ORDER[a.s]-SUIT_ORDER[b.s]) || ((b.r===1?14:b.r)-(a.r===1?14:a.r))).map((c)=>c.id);
+}
+function handOf(seat) {
+  const hand = UI.G.seats[seat].hand;
+  let ord = UI.order[seat];
+  if (!ord) ord = UI.order[seat] = sortIds(hand);
+  const ids = new Set(hand.map((c)=>c.id));
+  ord = ord.filter((id)=>ids.has(id));
+  hand.forEach((c)=>{ if (!ord.includes(c.id)) ord.push(c.id); });
+  UI.order[seat] = ord;
+  const byId = {}; hand.forEach((c)=>{ byId[c.id]=c; });
+  return ord.map((id)=>byId[id]);
+}
+
+// Fits the hand to the screen width: one row, or two rows when the overlap would hide the strip.
+function handLayout(n) {
+  const W = Math.min(window.innerWidth, 480) - 12;
+  const cs = getComputedStyle(app);
+  const hw = parseFloat(cs.getPropertyValue('--hw')) || 56;
+  const minStep = hw * 0.42, maxStep = hw * 0.78;
+  const perRow = Math.max(1, Math.floor((W - hw) / minStep) + 1);
+  const rows = n > perRow ? 2 : 1;
+  const per = Math.ceil(n / rows);
+  const step = per > 1 ? Math.min(maxStep, (W - hw) / (per - 1)) : 0;
+  return { rows, per, step, hw, hh: hw * 1.4 };
+}
+
+function render() {
+  const keep = {};
+  ['oppArea','ownArea','history'].forEach((id)=>{ const el=document.getElementById(id); if (el) keep[id]=[el.scrollLeft, el.scrollTop]; });
+  let html = '';
+  if (UI.screen === 'menu') html = renderMenu();
+  else if (UI.screen === 'join') html = renderJoin();
+  else if (UI.screen === 'lobby') html = renderLobby();
+  else if (UI.screen === 'game') html = renderGame();
+  if (UI.modal) html += renderModal();
+  if (UI.cover !== null && UI.screen === 'game') html += renderCover();
+  app.innerHTML = html + '<div id="toast" aria-live="polite"></div>';
+  drawToasts();
+  Object.keys(keep).forEach((id)=>{ const el=document.getElementById(id); if (el) { el.scrollLeft=keep[id][0]; el.scrollTop=keep[id][1]; } });
+  if (UI.shake) { const el = document.querySelector(UI.shake); if (el) el.classList.add('shake'); UI.shake = null; }
+}
+window.addEventListener('resize', () => { if (UI.screen === 'game') render(); });
+
+function renderMenu() {
+  return `<div class="screen menu">
+    <div class="logo" style="font-size:min(52px,12vw)"><div class="suits">♠ ♥ ♦ ♣</div>Limpa's<br>Breakfast<small>🥞 🍳 ☕ TEAM CARD GAME</small></div>
+    <div class="menu-col">
+      <button class="btn" data-act="new">Start a new game</button>
+      <button class="btn ghost" data-act="join">Join a game</button>
+      <button class="btn ghost" data-act="rules">How to play</button>
+      <div class="muted" style="font-size:11px;text-align:center">Prototype · 2v2 · pass-and-play &amp; computer seats</div>
+    </div></div>`;
+}
+
+function renderJoin() {
+  return `<div class="screen join">
+    <div class="logo" style="font-size:34px">Join a game</div>
+    <div class="menu-col" style="align-items:center">
+      <label for="gidIn" class="muted" style="font-size:13px">Enter the Game ID shared with you</label>
+      <input id="gidIn" placeholder="LB-XXXXX" maxlength="8" autocomplete="off" />
+      <button class="btn" data-act="doJoin" style="width:100%">Join</button>
+      <div class="muted" style="font-size:12px;text-align:center">${esc(UI.joinMsg)}</div>
+      <button class="btn ghost sm" data-act="home">← Back</button>
+    </div></div>`;
+}
+
+function renderLobby() {
+  const L = UI.lobby;
+  const team = (t) => `<div class="team panel t${t}">
+      <input class="team-name" data-team="${t}" value="${esc(L.teamNames[t])}" maxlength="16" aria-label="Team ${t+1} name" />
+      ${[t, t+2].map((i)=>`<div class="seat">
+        <button class="ava" data-act="ava" data-seat="${i}" aria-label="Change avatar">${L.seats[i].avatar}</button>
+        <input data-seatname="${i}" value="${esc(L.seats[i].name)}" maxlength="14" aria-label="Seat ${i+1} name" />
+        <button class="toggle ${L.seats[i].bot?'on':''}" data-act="botToggle" data-seat="${i}">${L.seats[i].bot?'🤖 Computer':'🙂 Human'}</button>
+      </div>`).join('')}
+    </div>`;
+  const ready = L.seats.every((s)=>s.name.trim());
+  return `<div class="screen lobby">
+    <div class="gidrow"><span class="muted" style="font-size:12px">GAME ID</span><span class="gid">${esc(L.gameId)}</span>
+      <button class="btn ghost sm" data-act="copy">📋 Copy</button></div>
+    ${team(0)}${team(1)}
+    <div class="muted" style="font-size:11px;text-align:center">Seats alternate ${esc(L.teamNames[0])} → ${esc(L.teamNames[1])}. Online rooms switch on with Firebase; for now human seats share this phone.</div>
+    <button class="btn" data-act="play" ${ready?'':'disabled'} style="font-size:20px;padding:12px 40px">▶ Play</button>
+    <button class="btn ghost sm" data-act="home">← Back</button>
+  </div>`;
+}
+
+function renderGame() {
+  const G = UI.G;
+  const viewer = UI.viewer;
+  const myTeam = E.teamOf(viewer), oppTeam = 1 - myTeam;
+  const myTurn = !G.seats[G.turn].bot && G.turn === viewer && UI.cover === null && G.phase !== 'over' && !UI.spinning;
+  const showHand = humans().length <= 1 || G.turn === viewer || G.phase === 'over';
+  const playPhase = myTurn && G.phase === 'play';
+
+  const xdeck = (t) => {
+    const T = G.teams[t];
+    if (T.deckStatus === 'unclaimed') return `<span class="xdeck" title="Extra deck not yet claimed"><span class="back"></span></span>`;
+    if (T.deckStatus === 'claimed') return `<span class="xdeck" title="${T.deckUsed?'Extra deck used':'Extra deck claimed'}">${T.deckUsed?'✅':'🃏'}</span>`;
+    return `<span class="xdeck" title="Extra deck forfeited">❌−100</span>`;
+  };
+  const teamBar = (t) => {
+    const T = G.teams[t];
+    return `<span class="score t${t}"><span class="tn">${esc(T.name)}</span><span class="n">${E.teamScore(T)}</span></span>
+      <span class="pls">${[t, t+2].map((i)=>{ const s=G.seats[i]; return `<span class="pl ${G.turn===i&&G.phase!=='over'?'turn':''}" title="${esc(s.name)}"><span class="ava">${s.avatar}</span>${s.bot?'<span class="bot">🤖</span>':''}</span>`; }).join('')}</span>
+      ${xdeck(t)}`;
+  };
+  const timerChip = (myTurn && G.phase === 'draw' && UI.deadline)
+    ? `<span class="chip timer" id="timer">⏱ ${Math.max(0,Math.ceil((UI.deadline-Date.now())/1000))}s</span>` : '';
+
+  const meldsHTML = (t, own) => {
+    const T = G.teams[t];
+    if (!T.melds.length) return `<div class="empty">${own?'No melds yet. Select 3+ cards and tap New.':'No melds yet.'}</div>`;
+    return `<div class="melds">${T.melds.map((m)=>meldHTML(m, own && playPhase)).join('')}</div>`;
+  };
+
+  const canDraw = myTurn && G.phase === 'draw' && G.stack.length;
+  const canPick = myTurn && G.phase === 'draw' && G.discard.length && !G.pileRefused;
+  const top = G.discard[G.discard.length - 1];
+  const hist = G.discard.slice(0, -1).reverse();
+  let hint = '';
+  if (UI.spinning) hint = 'Dealing…';
+  else if (G.phase === 'over') hint = 'Game over';
+  else if (!myTurn) hint = G.seats[G.turn].name + (G.seats[G.turn].bot ? ' is playing…' : "'s turn");
+  else if (G.phase === 'draw') hint = G.finalTurn ? 'Final turn: use the pile or end' : 'Tap the stack or the top discard';
+  else if (G.mustUse) hint = 'Meld the glowing card first';
+  else hint = 'Drag cards to a meld, or here to throw';
+  let pileBtns = '';
+  if (myTurn && G.mustUse) pileBtns += `<button class="btn ghost sm" data-act="returnPile">↩ Return pile</button>`;
+  if (myTurn && G.finalTurn && !G.mustUse) pileBtns += `<button class="btn red sm" data-act="endGame">End game</button>`;
+  const piles = `<div class="piles" id="piles" data-drop="discard">
+      <div class="stackwrap">${G.stack.length
+        ? `<div class="back stackcard ${canDraw?'can':''}" ${canDraw?'data-act="draw" role="button" aria-label="Draw from centre"':''}></div><span class="cnt">${G.stack.length}</span>`
+        : '<div class="slot">Empty</div>'}</div>
+      ${top ? cardHTML(top, 'topdis '+(canPick?'can':''), canPick?'data-act="pickup" role="button" aria-label="Pick up the discard pile"':'') : '<div class="slot">Drop to throw</div>'}
+      <div class="history" id="history">${hist.map((c)=>cardHTML(c,'tc')).join('')}</div>
+      <div class="pilectl">${timerChip}<span class="hint">${esc(hint)}</span>${pileBtns}<span class="pilelbl">DISCARD ${G.discard.length}</span></div>
+    </div>`;
+
+  const selIds = [...UI.sel];
+  const selCards = selIds.map((id)=>G.seats[viewer].hand.find((c)=>c.id===id)).filter(Boolean);
+  let newValid = false;
+  if (playPhase && selCards.length >= 3) {
+    const sets = G.teams[myTeam].melds.filter((m)=>m.type==='set').length;
+    newValid = E.checkNewMeld(selCards, sets).ok;
+  }
+  const on = playPhase;
+  const ctl = `<span class="ctl">
+      <button class="btn ghost" data-act="sort" ${showHand?'':'disabled'} aria-label="Sort hand">⇅</button>
+      <button class="btn ${newValid?'place':''}" data-act="newMeld" id="newBtn" ${on&&selCards.length>=3?'':'disabled'}>${newValid?'Place ✓':'New'}</button>
+      <button class="btn red" data-act="discard" ${on&&!G.finalTurn&&selCards.length===1&&!G.mustUse?'':'disabled'}>Throw</button>
+    </span>`;
+
+  let handHTML;
+  const cards = handOf(viewer);
+  const L = handLayout(cards.length);
+  if (showHand) {
+    handHTML = `<div class="hand" id="hand" style="height:${L.rows*L.hh + (L.rows-1)*8}px">` + cards.map((c,i)=>{
+      const row = Math.floor(i / L.per), col = i % L.per;
+      const cls = ['hc'];
+      if (UI.sel.has(c.id)) cls.push('sel');
+      if (G.mustUse === c.id) cls.push('must');
+      if (G.lastDrawn === c.id && G.turn === viewer && G.phase === 'play' && G.drewFrom === 'stack') cls.push('fresh');
+      if (UI.dealing) cls.push('deal');
+      const style = `style="left:${col*L.step}px;top:${row*(L.hh+8)}px;z-index:${i+1};${UI.dealing?`animation-delay:${i*45}ms`:''}"`;
+      return cardHTML(c, cls.join(' '), `data-act="sel" data-drag="hand" data-id="${c.id}" data-drop="hand:${c.id}" ${style} role="button" aria-pressed="${UI.sel.has(c.id)}" aria-label="${E.cardName(c)}"`,
+        c.x !== undefined ? '<i class="xd" title="Extra-deck card"></i>' : '');
+    }).join('') + '</div>';
+  } else {
+    handHTML = `<div class="hand"><div class="hidden"><div class="back"></div><span class="muted" style="font-size:12px">Hand hidden while others play</span></div></div>`;
+  }
+
+  return `<div class="game">
+    <div class="bar">${teamBar(oppTeam)}<span class="spacer"></span><button class="iconbtn" data-act="menu" aria-label="Menu">☰</button></div>
+    <div class="area opp" id="oppArea">${meldsHTML(oppTeam,false)}<span class="lbl">Opponents</span></div>
+    ${piles}
+    <div class="area own" id="ownArea">${meldsHTML(myTeam,true)}<span class="lbl">Your team</span></div>
+    <div class="bar">${teamBar(myTeam)}<span class="spacer"></span>${ctl}</div>
+    <div class="handwrap">${handHTML}</div>
+  </div>`;
+}
+
+function meldStatus(m) {
+  const n = E.meldCards(m).length;
+  const pureNow = E.meldPure(m);
+  if (m.scored === 'timpa') return { cls:'timpa locked', text:'🔒 TIMPA' };
+  if (E.isClosed(m) && E.isTimpa(m)) return { cls:'timpa locked', text:'🔒 TIMPA · end of turn' };
+  const lock = E.isClosed(m) ? '🔒 ' : '';
+  if (m.scored === 'pure' && !pureNow) return { cls:'impure', text: lock + '→ impure' };
+  if (m.scored) return { cls: m.scored, text: lock + '✓ ' + n };
+  if (n >= E.CFG.completeAt) return { cls: pureNow ? 'pure' : 'impure', text: lock + n + ' · end of turn' };
+  return { cls:'', text: n + '/7' };
+}
+
+function meldHTML(m, droppable) {
+  const cards = m.type === 'seq' ? m.slots : m.cards.map((c)=>({ c, r:m.rank }));
+  const st = meldStatus(m);
+  const canDrop = droppable && !E.isClosed(m);
+  const items = cards.map((s)=>{
+    const wild = m.type === 'seq' ? !E.isNaturalAt(s.c, s.r, m.suit) : (s.c.s === 'J' || s.c.r !== m.rank);
+    const tag = wild && m.type === 'seq' ? `<span class="rep">=${E.rankTxt(s.r)}</span>` : '';
+    return cardHTML(s.c, 'tc' + (wild?' wild':''), m.type==='seq' ? `data-r="${s.r}"` : '', tag);
+  }).join('');
+  return `<div class="meld ${st.cls} ${canDrop?'dropok':''}" data-act="openMeld" data-meld="${m.id}" ${canDrop?`data-drop="meld:${m.id}"`:''} id="meld-${m.id}">
+    <span class="badge">${st.text}</span>${items}</div>`;
+}
+
+function renderCover() {
+  const s = UI.G.seats[UI.cover]; const T = UI.G.teams[s.team];
+  return `<div class="ov"><div class="modal passbox">
+    <div class="muted">Pass the phone to</div>
+    <div class="ava">${s.avatar}</div>
+    <h2>${esc(s.name)}</h2><div class="muted" style="margin-bottom:14px">Team ${esc(T.name)}</div>
+    <button class="btn" data-act="reveal">I'm ${esc(s.name)}, show my cards</button>
+  </div></div>`;
+}
+
+function renderModal() {
+  const M = UI.modal; const G = UI.G;
+  if (M.type === 'spin') {
+    const s = G.seats[M.seat];
+    return `<div class="ov"><div class="modal passbox spinner">
+      <div class="muted">${M.done?'First to play':'Choosing who starts…'}</div>
+      <div class="ava">${s.avatar}</div><h2>${esc(s.name)}</h2>
+      <div class="muted">Team ${esc(G.teams[s.team].name)}</div></div></div>`;
+  }
+  if (M.type === 'rules') return `<div class="ov"><div class="modal">${rulesHTML()}<div style="text-align:right;margin-top:10px"><button class="btn" data-act="close">Got it</button></div></div></div>`;
+  if (M.type === 'confirmImpure') {
+    return `<div class="ov"><div class="modal" style="text-align:center">
+      <h2>Make this meld impure?</h2>
+      <p>Adding a wildcard turns this completed <b>pure</b> meld <b>impure</b>. It will drop from <b>200 to 100</b> at the end of your turn, and it won't count as your team's pure meld for going out.</p>
+      <div class="bigrow"><button class="btn ghost" data-act="close">Cancel</button><button class="btn red" data-act="confirmImpure">Continue</button></div>
+    </div></div>`;
+  }
+  if (M.type === 'menu') {
+    return `<div class="ov"><div class="modal">
+      <h2>Menu · ${esc(G.gameId)}</h2>
+      <h3>Seats (simulate a player dropping for 3+ min)</h3>
+      ${G.seats.map((s,i)=>`<div class="seat" style="margin-bottom:6px"><div class="ava" style="width:30px;height:30px;font-size:16px">${s.avatar}</div>
+        <div style="flex:1">${esc(s.name)} <span class="muted" style="font-size:11px">· ${esc(G.teams[s.team].name)}</span></div>
+        <button class="toggle ${s.bot?'on':''}" data-act="seatBot" data-seat="${i}">${s.bot?'🤖 Computer':'🙂 Human'}</button></div>`).join('')}
+      <div class="bigrow" style="justify-content:flex-start">
+        <button class="btn ghost sm" data-act="rules">How to play</button>
+        <button class="btn ghost sm" data-act="redeal">New deal</button>
+        <button class="btn red sm" data-act="quit">Quit</button>
+        <button class="btn sm" data-act="close">Resume</button>
+      </div></div></div>`;
+  }
+  if (M.type === 'wildpick') {
+    return `<div class="ov"><div class="modal">
+      <h2>Where should the wildcard go?</h2>
+      <p class="muted">These cards can form the sequence more than one way. Pick the layout you want.</p>
+      <div class="optrow">${M.opts.map((o,i)=>`<button type="button" class="opt" data-act="pickWild" data-i="${i}">
+        <span class="cards">${o.cards.map((x)=>{ const w = !E.isNaturalAt(x.c,x.r,o.suit); return cardHTML(x.c,'tc'+(w?' wild':''),'', w?`<span class="rep">=${E.rankTxt(x.r)}</span>`:''); }).join('')}</span>
+        <span><b>${esc(o.label)}</b><br><span class="muted" style="font-size:12px">${o.pure?'Pure':'Impure'}</span></span></button>`).join('')}</div>
+      <div style="text-align:right;margin-top:10px"><button class="btn ghost" data-act="close">Cancel</button></div>
+    </div></div>`;
+  }
+  if (M.type === 'meld') {
+    const m = [...G.teams[0].melds, ...G.teams[1].melds].find((x)=>x.id===M.meldId);
+    if (!m) return '';
+    const own = m.team === E.teamOf(UI.viewer);
+    const cards = m.type === 'seq' ? m.slots : m.cards.map((c)=>({ c, r:m.rank }));
+    const items = cards.map((s)=>{
+      const wild = m.type === 'seq' ? !E.isNaturalAt(s.c, s.r, m.suit) : (s.c.s==='J'||s.c.r!==m.rank);
+      return cardHTML(s.c, 'tc'+(wild?' wild':''), '', wild ? `<span class="rep">${m.type==='seq'?'='+E.rankTxt(s.r):'wild'}</span>` : '');
+    }).join('');
+    const st = meldStatus(m);
+    let note;
+    if (E.isClosed(m)) note = E.isTimpa(m) ? 'Timpa: 13 natural cards of one suit. It is locked and no cards can be added.' : 'This 13-card meld has a wildcard, so it scores as impure (100) and is closed. It can never become a Timpa.';
+    else if (own) note = 'To add a wildcard, drag it from your hand to the exact spot on this meld. A wildcard only moves when a natural card takes its spot. Adding a wildcard to a completed pure meld makes it impure (200 → 100).';
+    else note = 'Opponent meld (view only).';
+    return `<div class="ov"><div class="modal">
+      <h2>${m.type==='seq'?E.SUIT_SYM[m.suit]+' sequence':'Set of '+E.rankTxt(m.rank)+'s'} · ${cards.length} cards</h2>
+      <div class="muted" style="font-size:12px">${esc(st.text)}${m.points?' · '+m.points+' pts':''}</div>
+      <div class="bigmeld">${items}</div>
+      <p class="muted">${note}</p>
+      <div style="text-align:right"><button class="btn" data-act="close">Close</button></div>
+    </div></div>`;
+  }
+  if (M.type === 'results') {
+    const R = G.result; const b = R.breakdown;
+    const win = R.winner === null ? "It's a draw!" : '🏆 Team ' + esc(b[R.winner].name) + ' wins!';
+    const pen = (x) => x.penalties.length ? x.penalties.map((p)=>`${p.pts} <span class="muted" style="font-size:10px">(${esc(p.reason)})</span>`).join('<br>') : '0';
+    return `<div class="ov"><div class="modal">
+      <div class="winner">${win}</div>
+      <div class="muted" style="text-align:center;font-size:12px">${R.reason==='out'?esc(G.seats[R.outSeat].name)+' went out':'The centre stack ran out'}</div>
+      <table class="res">
+        <tr><th></th><th>${esc(b[0].name)}</th><th>${esc(b[1].name)}</th></tr>
+        <tr><td>Completed (pure / impure)</td><td>${b[0].completed} (${b[0].pure+b[0].timpas} / ${b[0].impure})</td><td>${b[1].completed} (${b[1].pure+b[1].timpas} / ${b[1].impure})</td></tr>
+        <tr><td>Timpas</td><td>${b[0].timpas}</td><td>${b[1].timpas}</td></tr>
+        <tr><td>Meld points</td><td>${b[0].meldPoints}</td><td>${b[1].meldPoints}</td></tr>
+        <tr><td>Going-out bonus</td><td>${b[0].bonus}</td><td>${b[1].bonus}</td></tr>
+        <tr><td>Penalties</td><td>${pen(b[0])}</td><td>${pen(b[1])}</td></tr>
+        <tr class="tot"><td>Total</td><td>${b[0].total}</td><td>${b[1].total}</td></tr>
+      </table>
+      <div class="bigrow"><button class="btn" data-act="again">Play again</button><button class="btn ghost" data-act="quit">Main menu</button><button class="btn ghost" data-act="close">View table</button></div>
+    </div></div>`;
+  }
+  return '';
+}
+
+function rulesHTML() {
+  return `<h2>How to play · Limpa's Breakfast (2v2)</h2>
+  <h3>Setup</h3><ul><li>2 decks + 4 Jokers (108 cards). 13 cards each, two face-down extra decks of 11 (one per team), 1 card face-up to start the discard pile, 33 in the centre.</li>
+  <li>Teams sit alternately. A random player starts; play goes clockwise.</li></ul>
+  <h3>Your turn</h3><ul><li><b>Draw</b> (60s): tap the centre stack, <i>or</i> tap the top discard to take the whole pile. If you take the pile, your first move must meld that top card. If you can't, tap <b>Return pile</b> and draw instead.</li>
+  <li><b>Meld</b>: select 3+ cards, and <b>New</b> turns into <b>Place ✓</b> when valid. Drag cards onto a team meld to add them (invalid moves shake).</li>
+  <li><b>Throw</b> one card (or drag it onto the discard row) to end your turn.</li></ul>
+  <h3>Melds</h3><ul><li><b>Sequence</b>: same suit, in order (A high or low, no wrap). <b>Set</b>: same rank, max 3 sets per team.</li>
+  <li>Tip: sets of A, K, Q, J, 3 or 4 are safest. Middle cards (5 to 10) are usually needed to finish sequences.</li>
+  <li>Wildcards: Jokers and 2s. <b>Only one wildcard per meld.</b> A 2 in its own place in its own suit (e.g. 3♥ 2♥ A♥) is a natural card.</li>
+  <li>Drag a wildcard to the exact spot on a meld (a yellow bar shows where it lands). When a natural card takes a wildcard's spot, the wildcard shifts to the low end, or the high end if needed; if neither works, the move is blocked. Wildcards can't otherwise be moved, swapped back, or moved between melds.</li>
+  <li>7+ cards = complete, scored at end of turn: pure 200, impure 100 (an impure meld stays impure).</li>
+  <li><b>Adding a wildcard to a completed pure meld</b> makes it impure. You'll be asked to confirm; it drops to 100 at the end of the turn and no longer counts as your pure meld.</li>
+  <li><b>Timpa</b>: all 13 cards of one suit with no wildcard = 500. A Timpa is locked. A 13-card sequence with a wildcard is impure (100) and closed.</li></ul>
+  <h3>Extra deck &amp; going out</h3><ul><li>Empty your hand by melding: claim your team's extra deck and keep playing. Empty it by discarding: you get it next turn.</li>
+  <li>Go out (+100, game ends) only after your team has claimed its deck, melded one of its cards, and has 2 completed melds incl. 1 pure.</li>
+  <li>Unused claimed deck at the end: −100. If the centre runs out, any unclaimed deck is shuffled into the centre and that team gets −100 (and can no longer go out).</li>
+  <li>When the centre is empty and no decks remain, the next player takes a final turn: use the discard pile or end the game.</li></ul>`;
+}
+
+let suppressClick = 0;
+app.addEventListener('click', (e) => {
+  if (Date.now() < suppressClick) return;
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  const a = el.dataset.act; const G = UI.G;
+  switch (a) {
+    case 'new': UI.lobby = newLobby(); UI.screen = 'lobby'; render(); break;
+    case 'join': UI.screen = 'join'; UI.joinMsg = ''; render(); break;
+    case 'doJoin': {
+      const v = (document.getElementById('gidIn').value || '').trim().toUpperCase();
+      UI.joinMsg = !/^LB-[A-Z0-9]{5}$/.test(v) ? 'That ID looks wrong. It should look like LB-7KQ2M.'
+        : 'Room lookup goes live once Firebase is connected. For now, start a new game and play pass-and-play on one device.';
+      render(); break;
+    }
+    case 'home': UI.screen = 'menu'; render(); break;
+    case 'rules': UI.modal = { type:'rules', prev:UI.modal }; render(); break;
+    case 'close': UI.modal = (UI.modal && UI.modal.prev) || null; render(); break;
+    case 'confirmImpure': {
+      const action = Object.assign({}, UI.modal.action, { confirmImpure:true });
+      UI.modal = null;
+      const r = act(action);
+      if (!r.ok) { UI.shake = '#meld-' + action.meldId; render(); }
+      break;
+    }
+    case 'ava': { const s = UI.lobby.seats[+el.dataset.seat]; s.avatar = AVATARS[(AVATARS.indexOf(s.avatar)+1)%AVATARS.length]; render(); break; }
+    case 'botToggle': { const s = UI.lobby.seats[+el.dataset.seat]; s.bot = !s.bot; if (!s.bot && BOT_NAMES.includes(s.name)) s.name = 'Player ' + (+el.dataset.seat+1); render(); break; }
+    case 'copy': {
+      const txt = `Join my Limpa's Breakfast game! Game ID: ${UI.lobby.gameId}`;
+      (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(()=>toast('Invite copied','good')).catch(()=>toast('Game ID: '+UI.lobby.gameId));
+      break;
+    }
+    case 'play': startGame(); break;
+    case 'menu': UI.modal = { type:'menu' }; render(); break;
+    case 'seatBot': {
+      const i = +el.dataset.seat; G.seats[i].bot = !G.seats[i].bot; UI.lobby.seats[i].bot = G.seats[i].bot;
+      const hs = humans(); if (!hs.includes(UI.viewer) && hs.length) UI.viewer = hs[0];
+      if (UI.cover !== null && G.seats[UI.cover].bot) UI.cover = null;
+      toast(G.seats[i].bot ? G.seats[i].name + ' handed to the computer' : G.seats[i].name + ' is back', 'good');
+      render(); onTurnChange(); render(); break;
+    }
+    case 'redeal': case 'again': UI.modal = null; startGame(); break;
+    case 'quit': clearTimeout(UI.botTimer); UI.botTimer = null; UI.G = null; UI.modal = null; UI.cover = null; UI.screen = 'menu'; render(); break;
+    case 'reveal': UI.viewer = UI.cover; UI.cover = null; armTimer(); render(); break;
+    case 'sel': {
+      if (G && G.turn !== UI.viewer) toast("It isn't your turn yet.");
+      const id = el.dataset.id;
+      if (UI.sel.has(id)) UI.sel.delete(id); else UI.sel.add(id);
+      render(); break;
+    }
+    case 'sort': UI.order[UI.viewer] = sortIds(G.seats[UI.viewer].hand); render(); break;
+    case 'draw': act({ type:'draw' }); break;
+    case 'pickup': act({ type:'pickup' }); break;
+    case 'returnPile': act({ type:'returnPile' }); break;
+    case 'endGame': act({ type:'endGame' }); break;
+    case 'newMeld': {
+      const ids = [...UI.sel];
+      const cards = ids.map((id)=>G.seats[UI.viewer].hand.find((c)=>c.id===id)).filter(Boolean);
+      const sets = G.teams[E.teamOf(UI.viewer)].melds.filter((m)=>m.type==='set').length;
+      const opts = E.newMeldOptions(cards, sets);
+      if (opts.length > 1) { UI.modal = { type:'wildpick', ids, opts }; render(); break; }
+      const r = act({ type:'newMeld', cardIds: ids, choice: opts[0] && opts[0].sig });
+      if (!r.ok) { UI.shake = '#newBtn'; render(); }
+      break;
+    }
+    case 'pickWild': {
+      const M = UI.modal; const o = M.opts[+el.dataset.i]; UI.modal = null;
+      const r = act({ type:'newMeld', cardIds: M.ids, choice: o.sig });
+      if (!r.ok) { UI.shake = '#newBtn'; render(); }
+      break;
+    }
+    case 'discard': act({ type:'discard', cardId:[...UI.sel][0] }); break;
+    case 'openMeld': UI.modal = { type:'meld', meldId: el.dataset.meld }; render(); break;
+  }
+});
+app.addEventListener('input', (e) => {
+  const t = e.target;
+  if (t.dataset.team !== undefined) UI.lobby.teamNames[+t.dataset.team] = t.value || (t.dataset.team==='0'?'Bhujia':'Kachori');
+  if (t.dataset.seatname !== undefined) {
+    UI.lobby.seats[+t.dataset.seatname].name = t.value;
+    const btn = app.querySelector('[data-act="play"]');
+    if (btn) btn.disabled = !UI.lobby.seats.every((s)=>s.name.trim());
+  }
+});
+app.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id === 'gidIn') app.querySelector('[data-act="doJoin"]').click(); });
+
+let drag = null;
+app.addEventListener('pointerdown', (e) => {
+  const el = e.target.closest('[data-drag]');
+  if (!el || e.button > 0) return;
+  drag = { el, id: el.dataset.id, x: e.clientX, y: e.clientY, active:false };
+});
+window.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  if (!drag.active) {
+    if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 9) return;
+    const G = UI.G;
+    if (!G || G.turn !== UI.viewer || G.seats[G.turn].bot || UI.cover !== null) { drag = null; return; }
+    drag.active = true;
+    drag.ids = UI.sel.has(drag.id) ? [...UI.sel] : [drag.id];
+    const g = document.createElement('div'); g.className = 'dragghost';
+    const c = drag.el.cloneNode(true); c.classList.remove('sel','must','deal','fresh');
+    c.style.left = '0'; c.style.top = '0'; c.style.position = 'relative'; c.style.animation = 'none';
+    g.appendChild(c);
+    if (drag.ids.length > 1) { const n = document.createElement('span'); n.className = 'n'; n.textContent = drag.ids.length; g.appendChild(n); }
+    document.body.appendChild(g); drag.ghost = g;
+    drag.el.style.opacity = '.35';
+  }
+  e.preventDefault();
+  drag.ghost.style.left = e.clientX + 'px'; drag.ghost.style.top = e.clientY + 'px';
+  const tgt = dropTarget(e.clientX, e.clientY);
+  document.querySelectorAll('.hover').forEach((n)=>{ if (n !== tgt) n.classList.remove('hover'); });
+  if (tgt && !tgt.dataset.drop.startsWith('hand:')) tgt.classList.add('hover');
+  showInsBar(tgt, e.clientX);
+}, { passive:false });
+
+function hasWild(ids) {
+  const hand = UI.G.seats[UI.viewer].hand;
+  return ids.some((id)=>{ const c = hand.find((x)=>x.id===id); return c && E.isWildType(c); });
+}
+function wildSpot(meldEl, x) {
+  const cs = [...meldEl.querySelectorAll('.card[data-r]')];
+  if (!cs.length) return null;
+  const xs = cs.map((c)=>c.getBoundingClientRect().left);
+  xs.push(cs[cs.length-1].getBoundingClientRect().right);
+  let k = 0; xs.forEach((b,i)=>{ if (Math.abs(b-x) < Math.abs(xs[k]-x)) k = i; });
+  const rel = xs[k] - meldEl.getBoundingClientRect().left;
+  if (k === 0) return { pos:'high', rel, label:'high end' };
+  if (k === cs.length) return { pos:'low', rel, label:'low end' };
+  return { pos:{ below:+cs[k-1].dataset.r, above:+cs[k].dataset.r }, rel, label:'here' };
+}
+function showInsBar(tgt, x) {
+  document.querySelectorAll('.insbar').forEach((n)=>n.remove());
+  if (!tgt || !tgt.dataset.drop.startsWith('meld:') || !drag || !hasWild(drag.ids)) return;
+  const sp = wildSpot(tgt, x); if (!sp) return;
+  const bar = document.createElement('div'); bar.className = 'insbar'; bar.style.left = sp.rel + 'px';
+  bar.innerHTML = '<span>' + sp.label + '</span>'; tgt.appendChild(bar);
+}
+window.addEventListener('pointerup', (e) => {
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (!d.active) return;
+  suppressClick = Date.now() + 350;
+  d.ghost.remove(); d.el.style.opacity = '';
+  document.querySelectorAll('.insbar').forEach((n)=>n.remove());
+  document.querySelectorAll('.hover').forEach((n)=>n.classList.remove('hover'));
+  const tgt = dropTarget(e.clientX, e.clientY);
+  if (!tgt) return;
+  const [kind, val] = tgt.dataset.drop.split(':');
+  if (kind === 'meld') {
+    const sp = hasWild(d.ids) ? wildSpot(tgt, e.clientX) : null;
+    addToMeld(val, d.ids, sp ? sp.pos : undefined);
+  } else if (kind === 'discard') {
+    if (d.ids.length !== 1) { toast('Drop a single card to throw it.', 'err'); return; }
+    act({ type:'discard', cardId: d.ids[0] });
+  } else if (kind === 'hand' && !d.ids.includes(val)) {
+    const ord = UI.order[UI.viewer].filter((id)=>!d.ids.includes(id));
+    const rect = tgt.getBoundingClientRect();
+    let idx = ord.indexOf(val); if (e.clientX > rect.left + rect.width * 0.3) idx++;
+    ord.splice(idx, 0, ...d.ids); UI.order[UI.viewer] = ord; render();
+  }
+});
+window.addEventListener('pointercancel', () => { if (drag && drag.ghost) { drag.ghost.remove(); drag.el.style.opacity=''; } drag = null; });
+function dropTarget(x, y) {
+  const els = document.elementsFromPoint(x, y);
+  for (const el of els) { const t = el.closest && el.closest('[data-drop]'); if (t) return t; }
+  return null;
+}
+
+window.__limpa = { UI, render, after, addToMeld };
+render();
+})();
+</script>
+</body>
+</html>
