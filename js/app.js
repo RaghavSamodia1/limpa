@@ -291,12 +291,12 @@ function metrics(n, showHand) {
   const per = Math.ceil(Math.max(1, n) / rows);
   const step = per > 1 ? Math.min(maxStep, avail / (per - 1)) : 0;
   const rowStep = hh * .5, R = hh * 4.5;
-  const actH = 66, safeB = inset('bottom'), safeT = inset('top');
+  const actH = 56, safeB = inset('bottom'), safeT = inset('top');
   const handH = (showHand ? hh * .95 + (rows - 1) * rowStep : hh * .62) + safeB;
   const dockH = actH + handH;
   const c = Math.cos(UI.tilt * Math.PI / 180), s = Math.sin(UI.tilt * Math.PI / 180);
   const yb = H - (dockH - 30);                 // near edge of the table top, just under the dock edge
-  const yf = Math.max(92, safeT + 96);         // far edge of the table on screen
+  const yf = Math.max(70, safeT + 78);         // far edge of the table on screen
   const yo = Math.max(10, safeT + 30);         // vanishing point of the perspective
   const ph = Math.max(300, PERSP * (yb - yf) / ((yf - yo) * s + PERSP * c));
   return { W, H, hw, hh, rows, per, step, rowStep, R, actH, handH, dockH, safeT, safeB, ph, yo };
@@ -398,7 +398,7 @@ function fitMelds() {
     const melds = zone.querySelector('.melds'), first = melds && melds.querySelector('.tc');
     if (!first) return;
     const mw0 = first.offsetWidth; let mw = mw0;
-    for (let i = 0; i < 24 && zone.scrollHeight > zone.clientHeight + 1 && mw > 24; i++) {
+    for (let i = 0; i < 24 && zone.scrollHeight > zone.clientHeight + 1 && mw > 20; i++) {
       mw *= .94; melds.style.setProperty('--mw', mw.toFixed(1) + 'px');
     }
     worst = Math.min(worst, mw / mw0);
@@ -510,14 +510,14 @@ function renderGame() {
     const s = G.seats[seat];
     const on = G.turn === seat && G.phase !== 'over' && !UI.spinning;
     return `<div class="seat ${pos} ${on ? 'turn' : ''}" data-seat="${seat}" style="--tcrgb:var(--t${s.team}rgb)">
-      <div class="ring"><div class="ava">${s.avatar}${s.bot ? '<span class="bot">🤖</span>' : ''}</div><span class="hc2" title="Cards in hand">${s.hand.length}</span></div>
+      <div class="ring"><div class="ava">${s.avatar}${s.bot ? '<span class="bot">🤖</span>' : ''}</div></div>
       <div class="nm">${esc(s.name)}</div></div>`;
   };
   // Face-down hand with the player's real card count.
   const fan = (pos, seat) => {
     let h = ''; const N = Math.max(1, G.seats[seat].hand.length), st = Math.min(6, 50 / Math.max(1, N - 1));
     for (let i = 0; i < N; i++) h += `<i class="back" style="--a:${((i - (N - 1) / 2) * st).toFixed(1)}deg"></i>`;
-    return `<div class="fan fan-${pos}">${h}</div>`;
+    return `<div class="fan fan-${pos}">${h}<b class="fcnt" title="Cards in hand">${N}</b></div>`;
   };
 
   const zone = (t, own) => {
