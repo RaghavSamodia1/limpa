@@ -164,6 +164,13 @@ function runSpinner() {
 function onTurnChange() {
   const G = UI.G; if (!G) return;
   UI.sel.clear();
+  if (UI.net) {                                   // online: everyone keeps their own seat, nobody passes a phone
+    if (G.phase === 'over') { UI.modal = { type:'results' }; UI.deadline = null; return; }
+    if (G.turn === UI.viewer) { Sound.play('turn'); if (navigator.vibrate) { try { navigator.vibrate(40); } catch (e) {} } }
+    armTimer();
+    if (isHost()) scheduleBot();
+    return;
+  }
   if (G.phase === 'over') { UI.modal = { type:'results' }; UI.deadline = null; return; }
   const hs = humans(); const cur = G.turn;
   if (!G.seats[cur].bot) {
@@ -178,6 +185,7 @@ function onTurnChange() {
 function armTimer() {
   const G = UI.G;
   if (!G || G.phase !== 'draw' || G.seats[G.turn].bot || UI.cover !== null || UI.spinning) return;
+  if (UI.net && G.turn !== UI.viewer) return;       // online: only your own turn has your timer
   const key = G.turnNo + '-' + (G.pileRefused ? 1 : 0);
   if (UI.deadlineKey === key) return;
   UI.deadlineKey = key; UI.deadline = Date.now() + E.CFG.drawSeconds * 1000;
@@ -185,7 +193,7 @@ function armTimer() {
 
 function scheduleBot() {
   const G = UI.G;
-  if (!G || G.phase === 'over' || UI.botTimer || UI.spinning) return;
+  if (!G || G.phase === 'over' || UI.botTimer || UI.spinning || isGuest()) return;   // only the host (or a local game) plays for computers
   if (!G.seats[G.turn].bot) return;
   UI.botTimer = setTimeout(() => {
     UI.botTimer = null;
@@ -200,7 +208,8 @@ function scheduleBot() {
 }
 
 function act(action, quiet) {
-  const G = UI.G; const seat = G.turn;
+  if (isGuest()) return guestAct(action, quiet);
+  const G = UI.G; const seat = UI.net ? UI.viewer : G.turn;
   const prevTurn = G.turnNo;
   const r = E.apply(G, seat, action);
   if (!r.ok) { Sound.play('error'); if (!quiet) toast(r.error, 'err'); return r; }
@@ -221,6 +230,10 @@ function addToMeld(meldId, cardIds, wildPos) {
 }
 
 function after(r, seat, prevTurnNo, actType) {
+  afterLocal(r, seat, prevTurnNo, actType);
+  if (isHost()) publishState({ seat, type: actType }, r.events);
+}
+function afterLocal(r, seat, prevTurnNo, actType) {
   const G = UI.G;
   (r.events || []).forEach((e) => { if (e.kind === 'good' || e.kind === 'bad' || e.kind === 'warn') toast(e.text, e.kind === 'bad' ? 'err' : 'good'); });
   UI.actor = { seat, type: actType };
@@ -237,6 +250,7 @@ function after(r, seat, prevTurnNo, actType) {
 setInterval(() => {
   const G = UI.G;
   if (!G || UI.screen !== 'game' || !UI.deadline || G.phase !== 'draw' || UI.cover !== null) return;
+  if (UI.net && G.turn !== UI.viewer) return;
   const ms = Math.max(0, UI.deadline - Date.now());
   const left = Math.ceil(ms / 1000);
   const el = document.getElementById('timer');
@@ -246,11 +260,285 @@ setInterval(() => {
   if (left <= 0) {
     UI.deadline = null;
     toast("Time's up: auto draw & discard.", 'err');
+    if (isGuest()) { guestSend({ t:'act', action:{ type:'timeout' } }); return; }
     const seat = G.turn; const r = E.apply(G, seat, { type:'timeout' });
     after(r, seat, -1, 'timeout');
   }
 }, 250);
 const ringBg = (p, low) => `conic-gradient(${low ? 'var(--bad)' : 'var(--yellow)'} ${(p * 360).toFixed(1)}deg,rgba(0,0,0,.45) 0)`;
+
+/* ---------------- online rooms ----------------
+   Host: runs the rules and the computer players, checks every move, and sends each guest a copy of the game
+   with only that guest's own hand in it. Guest: shows what it is sent and forwards moves to the host. */
+const NETCFG = { awayMs: 180000, heartbeatMs: 8000, deadMs: 30000, rejoinTries: 60 };
+const ROOM_RE = /^LB-[A-Z0-9]{5}$/;
+const isHost = () => !!UI.net && UI.net.role === 'host';
+const isGuest = () => !!UI.net && UI.net.role === 'guest';
+const newToken = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+const profile = () => ({ name: (store.get('name') || 'Player').slice(0, 14), avatar: store.get('avatar') || '🥞' });
+const roomLink = (code) => location.href.split('#')[0] + '#room=' + code;
+const shareText = (code) => `Join my game of Limpa's Breakfast! Room code: ${code}\n${roomLink(code)}`;
+const normCode = (v) => { v = String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); if (v.startsWith('LB')) v = v.slice(2); return 'LB-' + v.slice(0, 5); };
+const readJSON = (k) => { try { return JSON.parse(store.get(k)); } catch (e) { return null; } };
+const fresh = (x) => x && Date.now() - (x.at || 0) < 8 * 3600 * 1000;
+
+let wakeLock = null;
+async function keepAwake() { try { if (navigator.wakeLock && document.visibilityState === 'visible' && UI.net) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {} }
+document.addEventListener('visibilitychange', () => { if (UI.net) keepAwake(); });
+
+function publicLobby() {
+  const L = UI.lobby;
+  return { code: UI.net.code, teamNames: L.teamNames, level: L.level, started: !!UI.G, seats: L.seats.map((s) => ({ name: s.name, avatar: s.avatar, bot: !!s.bot, joined: !!s.joined })) };
+}
+function broadcastLobby() {
+  const N = UI.net; if (!isHost()) return;
+  const lobby = publicLobby();
+  Object.keys(N.peers).forEach((k) => N.tr.send(k, { t: 'lobby', lobby }));
+  persistHost();
+}
+function persistHost() {
+  const N = UI.net; if (!isHost()) return;
+  store.set('host', JSON.stringify({ code: N.code, G: UI.G, lobby: UI.lobby, tokens: N.tokens, at: Date.now() }));
+}
+
+/* ----- host ----- */
+function createRoom(resume) {
+  if (!window.LimpaNet || !LimpaNet.available()) { toast('Online rooms could not load. Reload the page and try again.', 'err'); return; }
+  const pf = profile();
+  const L = resume ? resume.lobby : {
+    gameId: genId(), teamNames: ['Bhujia', 'Kachori'], level: store.get('level') === 'easy' ? 'easy' : 'smart',
+    seats: [
+      { name: pf.name, avatar: pf.avatar, bot: false, joined: true },
+      { name: BOT_NAMES[0], avatar: '🍳', bot: true },
+      { name: 'Open seat', avatar: '🍽️', bot: false, joined: false },
+      { name: BOT_NAMES[2], avatar: '🥐', bot: true },
+    ],
+  };
+  UI.lobby = L;
+  const N = UI.net = { role: 'host', code: L.gameId, status: 'connecting', error: '', peers: {}, last: {}, seq: 0, tokens: resume ? resume.tokens : [null, null, null, null] };
+  if (resume && resume.G) {                       // picking a game back up after the page was closed or reloaded
+    UI.G = resume.G; UI.viewer = 0; UI.screen = 'game'; UI.tilt = TILT0; UI.order = {}; UI.sel.clear(); UI.modal = null;
+    UI.G.seats.forEach((st, i) => { if (i > 0 && !st.bot) st.away = Date.now(); });
+    UI.deadline = null; UI.deadlineKey = null; UI.dealing = false; UI.spinning = false;
+    onTurnChange();
+  } else { UI.G = null; UI.screen = 'room'; }
+  N.tr = LimpaNet.host(L.gameId, {
+    onOpen() { N.status = 'ready'; N.error = ''; persistHost(); render(); },
+    onMessage: hostMessage, onGone: hostGone,
+    onError(kind) {
+      N.status = 'error';
+      N.error = kind === 'unavailable-id' ? 'That room code is already in use. Close this room and make a new one.' : "Can't reach the room server. Check your internet connection, then tap Try again.";
+      render();
+    },
+    onLost() { N.status = 'error'; N.error = 'The connection to the room server was lost. Tap Try again.'; render(); },
+  });
+  N.timer = setInterval(hostWatch, 3000);
+  keepAwake(); render();
+}
+
+function hostMessage(key, msg) {
+  const N = UI.net; if (!isHost() || !msg || typeof msg !== 'object') return;
+  N.last[key] = Date.now();
+  if (msg.t === 'hello') return hostHello(key, msg);
+  const seat = N.peers[key]; if (seat === undefined) return;          // say hello first
+  if (msg.t === 'ping') { N.tr.send(key, { t: 'pong' }); return; }
+  if (msg.t === 'profile') {
+    const nm = String(msg.name || '').slice(0, 14) || 'Player', av = String(msg.avatar || '').slice(0, 4) || '🥞';
+    Object.assign(UI.lobby.seats[seat], { name: nm, avatar: av });
+    if (UI.G) { UI.G.seats[seat].name = nm; UI.G.seats[seat].avatar = av; publishState({ seat: -1, type: 'presence' }, []); } else broadcastLobby();
+    render(); return;
+  }
+  if (msg.t === 'leave') { hostDropSeat(seat, key, true); return; }
+  if (msg.t === 'act') {
+    const G = UI.G; if (!G || G.phase === 'over' || !msg.action || typeof msg.action.type !== 'string') { N.tr.send(key, { t: 'reject', error: 'The game is not running.' }); return; }
+    const prev = G.turnNo, r = E.apply(G, seat, msg.action);
+    if (!r.ok) { N.tr.send(key, { t: 'reject', error: r.error, code: r.code }); return; }
+    after(r, seat, prev, msg.action.type);
+  }
+}
+function hostHello(key, m) {
+  const N = UI.net, L = UI.lobby, G = UI.G;
+  const name = String(m.name || 'Player').slice(0, 14) || 'Player', avatar = String(m.avatar || '🥞').slice(0, 4);
+  let seat = m.token ? N.tokens.indexOf(m.token) : -1;
+  if (seat < 1) {
+    seat = -1;
+    if (G) { N.tr.send(key, { t: 'full', reason: 'started' }); return; }
+    seat = L.seats.findIndex((s, i) => i > 0 && !s.bot && !s.joined);
+    if (seat < 0) { N.tr.send(key, { t: 'full', reason: 'full' }); return; }
+    N.tokens[seat] = newToken();
+  }
+  Object.keys(N.peers).forEach((k) => { if (N.peers[k] === seat && k !== key) { N.tr.drop(k); delete N.peers[k]; } });
+  N.peers[key] = seat;
+  Object.assign(L.seats[seat], { name, avatar, joined: true, bot: false });
+  N.tr.send(key, { t: 'welcome', seat, token: N.tokens[seat], code: N.code, lobby: publicLobby() });
+  if (G) {
+    const st = G.seats[seat]; const was = st.away || st.takenOver;
+    Object.assign(st, { name, avatar, bot: false, away: null, takenOver: false });
+    if (was) toast(name + ' is back', 'good');
+    publishState({ seat: -1, type: 'presence' }, []);
+    if (G.turn !== UI.viewer) { clearTimeout(UI.botTimer); UI.botTimer = null; }
+  } else { toast(name + ' joined', 'good'); broadcastLobby(); }
+  Sound.play('turn', true); render();
+}
+function hostGone(key) {
+  const N = UI.net; if (!isHost()) return;
+  const seat = N.peers[key]; delete N.peers[key]; if (seat === undefined) return;
+  hostDropSeat(seat, key, false);
+}
+// A guest left on purpose (leave) or the connection died (not on purpose).
+function hostDropSeat(seat, key, onPurpose) {
+  const N = UI.net, L = UI.lobby, G = UI.G; N.tr.drop(key); delete N.peers[key];
+  const name = L.seats[seat].name;
+  if (!G) { Object.assign(L.seats[seat], { name: 'Open seat', avatar: '🍽️', joined: false }); N.tokens[seat] = null; toast(name + ' left', 'err'); broadcastLobby(); render(); return; }
+  const st = G.seats[seat];
+  if (onPurpose) { Object.assign(st, { bot: true, takenOver: true, away: null, level: 'smart' }); N.tokens[seat] = null; toast(name + ' left. The computer takes their seat.', 'err'); scheduleBot(); }
+  else { st.away = Date.now(); toast(name + ' lost connection. Waiting for them…', 'err'); }
+  publishState({ seat: -1, type: 'presence' }, []); render();
+}
+// Every few seconds: drop silent guests, and hand an away player's seat to the computer after three minutes.
+function hostWatch() {
+  const N = UI.net; if (!isHost()) return;
+  Object.keys(N.peers).forEach((k) => { if (Date.now() - (N.last[k] || 0) > NETCFG.deadMs) { const seat = N.peers[k]; delete N.peers[k]; N.tr.drop(k); if (seat !== undefined) hostDropSeat(seat, k, false); } });
+  const G = UI.G; if (!G || G.phase === 'over') return;
+  let changed = false;
+  G.seats.forEach((st) => {
+    if (st.away && !st.bot && Date.now() - st.away > NETCFG.awayMs) {
+      Object.assign(st, { bot: true, takenOver: true, away: null, level: 'smart' }); changed = true;
+      toast(st.name + ' has been away for 3 minutes. The computer is playing for them until they return.', 'err');
+    }
+  });
+  if (changed) { publishState({ seat: -1, type: 'presence' }, []); scheduleBot(); render(); }
+}
+function publishState(actor, events) {
+  const N = UI.net, G = UI.G; if (!isHost() || !G) return;
+  const evs = (events || []).map((e) => ({ text: e.text, kind: e.kind }));
+  Object.keys(N.peers).forEach((k) => {
+    const seat = N.peers[k];
+    N.tr.send(k, { t: 'state', seat, state: E.redact(G, seat), actor, events: evs, n: ++N.seq });
+  });
+  persistHost();
+}
+function startOnlineGame() {
+  const L = UI.lobby;
+  if (L.seats.some((s) => !s.bot && !s.joined)) { toast('Still waiting for everyone to join.', 'err'); return; }
+  clearTimeout(UI.botTimer); UI.botTimer = null;
+  UI.G = E.createGame({ gameId: L.gameId, teamNames: L.teamNames, seats: L.seats.map((s) => ({ name: s.name, avatar: s.avatar, bot: !!s.bot, level: L.level })) });
+  UI.screen = 'game'; UI.tilt = TILT0; UI.sel.clear(); UI.order = {}; UI.modal = null; UI.cover = null; UI.deadline = null; UI.deadlineKey = null;
+  UI.viewer = 0; UI.spinning = false; UI.dealing = true; setTimeout(() => { UI.dealing = false; }, 1600);
+  onTurnChange(); toast(UI.G.seats[UI.G.turn].name + ' starts', 'good');
+  render(); publishState({ seat: -1, type: 'start' }, []);
+}
+
+/* ----- guest ----- */
+function joinRoom(code) {
+  if (!window.LimpaNet || !LimpaNet.available()) { UI.joinMsg = 'Online rooms could not load. Reload the page and try again.'; render(); return; }
+  const sess = readJSON('session');
+  const N = UI.net = { role: 'guest', code, status: 'connecting', error: '', token: sess && sess.code === code ? sess.token : null, mySeat: sess && sess.code === code ? sess.seat : null, tries: 0, joined: false };
+  UI.G = null; UI.screen = 'room'; UI.joinMsg = ''; UI.lobby = null; render();
+  guestConnect(); keepAwake();
+  N.beat = setInterval(() => {
+    if (!isGuest() || N !== UI.net) return;
+    guestSend({ t: 'ping' });
+    if (N.status === 'connected' && Date.now() - (N.lastMsg || 0) > NETCFG.deadMs) guestLost();
+  }, NETCFG.heartbeatMs);
+}
+function guestConnect() {
+  const N = UI.net; if (!isGuest()) return;
+  if (N.tr) { try { N.tr.close(); } catch (e) {} }
+  N.tr = LimpaNet.join(N.code, {
+    onOpen() { const pf = profile(); N.lastMsg = Date.now(); N.tr.send({ t: 'hello', name: pf.name, avatar: pf.avatar, token: N.token }); },
+    onMessage: guestMessage,
+    onClose() { if (N === UI.net) guestLost(); },
+    onError(kind) {
+      if (N !== UI.net) return;
+      if (N.joined) { guestLost(); return; }
+      leaveRoom(kind === 'not-found' ? 'No room found with that code. Check the code, or ask the host to share it again.' : "Couldn't connect to the room. Check your internet connection and try again.", true);
+    },
+  });
+}
+function guestLost() {
+  const N = UI.net; if (!isGuest() || N.retry) return;
+  N.status = 'lost'; render();
+  N.retry = setTimeout(() => {
+    N.retry = null; if (N !== UI.net) return;
+    if (++N.tries > NETCFG.rejoinTries) { leaveRoom('Could not get back into the room.', true); return; }
+    guestConnect(); N.retry = setTimeout(() => { N.retry = null; if (N === UI.net && N.status === 'lost') guestLost(); }, 6000);
+  }, 3000);
+}
+function guestSend(msg) { const N = UI.net; return !!(isGuest() && N.tr && N.tr.send(msg)); }
+function guestMessage(m) {
+  const N = UI.net; if (!isGuest() || !m || typeof m !== 'object') return;
+  N.lastMsg = Date.now();
+  if (m.t === 'welcome') {
+    N.mySeat = m.seat; N.token = m.token; N.status = 'connected'; N.joined = true; N.tries = 0; UI.lobby = lobbyFrom(m.lobby);
+    store.set('session', JSON.stringify({ code: N.code, token: N.token, seat: N.mySeat, at: Date.now() }));
+    if (!UI.G) UI.screen = 'room'; render();
+  } else if (m.t === 'lobby') { UI.lobby = lobbyFrom(m.lobby); if (UI.screen === 'room') render(); }
+  else if (m.t === 'state') applyRemote(m);
+  else if (m.t === 'reject') { Sound.play('error'); toast(m.error || 'That move was not allowed.', 'err'); }
+  else if (m.t === 'full') leaveRoom(m.reason === 'started' ? 'That game has already started.' : 'That room is full.', true);
+  else if (m.t === 'bye') leaveRoom('The host closed the room.', true);
+}
+const lobbyFrom = (pl) => ({ gameId: pl.code, teamNames: pl.teamNames, level: pl.level, seats: pl.seats });
+function inflate(red, seat) {
+  const dummy = (tag, n) => Array.from({ length: n }, (_, k) => ({ id: tag + k, s: '?', r: 0 }));
+  const G = red;
+  G.seats.forEach((p, i) => { if (i !== seat) p.hand = dummy('h' + i + '_', p.handCount || 0); });
+  G.stack = dummy('s', G.stackCount || 0);
+  G.teams.forEach((t, i) => { t.deck = dummy('d' + i + '_', t.deckCount || 0); });
+  return G;
+}
+function applyRemote(m) {
+  const N = UI.net, me = m.seat, first = !UI.G || UI.screen !== 'game';
+  const prevTurn = UI.G ? UI.G.turnNo : -1, prevPhase = UI.G ? UI.G.phase : null;
+  const G = inflate(m.state, me);
+  UI.G = G; UI.viewer = me; N.mySeat = me; N.status = 'connected';
+  if (first) { UI.screen = 'game'; UI.tilt = TILT0; UI.sel.clear(); UI.order = {}; UI.modal = null; UI.dealing = true; UI.deadline = null; UI.deadlineKey = null; setTimeout(() => { UI.dealing = false; }, 1600); }
+  else if (prevPhase === 'over' && G.phase !== 'over') { UI.modal = null; UI.sel.clear(); UI.order = {}; UI.dealing = true; UI.tilt = TILT0; UI.deadlineKey = null; setTimeout(() => { UI.dealing = false; }, 1600); }
+  const a = m.actor || null; UI.actor = a;
+  (m.events || []).forEach((e) => { if (e.kind === 'good' || e.kind === 'bad' || e.kind === 'warn') toast(e.text, e.kind === 'bad' ? 'err' : 'good'); });
+  if (a && a.seat >= 0) {
+    const quiet = a.seat !== me;
+    Sound.play(a.type === 'draw' || a.type === 'pickup' || a.type === 'timeout' ? 'draw' : a.type === 'discard' ? 'throw' : a.type === 'newMeld' || a.type === 'addToMeld' ? 'place' : '', quiet);
+    (m.events || []).forEach((e) => { if (quiet && e.kind === 'info' && /picked up|returned the pile/.test(e.text)) toast(e.text); });
+    if (a.seat === me) { if (a.type === 'draw' || a.type === 'pickup') UI.deadline = null; if (a.type === 'pickup') UI.sel = new Set([G.mustUse]); else UI.sel.clear(); }
+  }
+  if (G.phase === 'over') {
+    if (!UI.modal || UI.modal.type !== 'results') { UI.modal = { type: 'results' }; Sound.play(G.result.winner === E.teamOf(me) ? 'win' : G.result.winner === null ? 'turn' : 'lose'); }
+    UI.deadline = null; render(); return;
+  }
+  if (first || G.turnNo !== prevTurn) onTurnChange(); else armTimer();
+  render();
+}
+// Check the move here first (the guest's copy has its own hand, the table and the piles), then ask the host to play it.
+function guestAct(action, quiet) {
+  const probe = JSON.parse(JSON.stringify(UI.G));
+  const r = E.apply(probe, UI.viewer, action);
+  if (!r.ok) { Sound.play('error'); if (!quiet) toast(r.error, 'err'); return r; }
+  if (!guestSend({ t: 'act', action })) { toast('Not connected to the room right now.', 'err'); return { ok: false, error: 'offline' }; }
+  return { ok: true, remote: true, events: [] };
+}
+function leaveRoom(msg, silent) {
+  const N = UI.net;
+  if (N) {
+    if (isHost()) { Object.keys(N.peers).forEach((k) => N.tr.send(k, { t: 'bye' })); store.set('host', ''); }
+    else if (N.tr && N.joined && !silent) guestSend({ t: 'leave' });
+    if (isGuest() && (!msg || !silent || !/connect|room found/i.test(msg))) store.set('session', '');
+    clearInterval(N.timer); clearInterval(N.beat); clearTimeout(N.retry);
+    const tr = N.tr; setTimeout(() => { try { tr && tr.close(); } catch (e) {} }, 400);
+  }
+  UI.net = null; UI.G = null; UI.modal = null; UI.cover = null; UI.screen = 'menu'; UI.lobby = null;
+  clearTimeout(UI.botTimer); UI.botTimer = null;
+  render(); if (msg) toast(msg, silent ? 'err' : 'good');
+}
+function shareRoom() {
+  const code = UI.net.code, data = { title: "Limpa's Breakfast", text: shareText(code), url: roomLink(code) };
+  if (navigator.share) { navigator.share({ title: data.title, text: shareText(code) }).catch(() => {}); return; }
+  copyText(shareText(code), 'Invite copied. Paste it into a message.');
+}
+function copyText(txt, ok) {
+  (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast(ok, 'good')).catch(() => toast(txt));
+}
 
 /* ---------------- hand order & layout ---------------- */
 function sortIds(hand) {
@@ -415,9 +703,12 @@ function render(carry) {
   if (UI.screen === 'menu') html = renderMenu();
   else if (UI.screen === 'join') html = renderJoin();
   else if (UI.screen === 'lobby') html = renderLobby();
+  else if (UI.screen === 'room') html = renderRoom();
   else if (UI.screen === 'game') html = renderGame();
   if (UI.modal) html += renderModal();
   if (UI.cover !== null && UI.screen === 'game') html += renderCover();
+  if (UI.net && UI.net.status === 'lost' && UI.screen === 'game') html += '<div class="netbar">Connection lost. Reconnecting…</div>';
+  app.classList.toggle('ingame', UI.screen === 'game');
   app.innerHTML = html + '<div id="toast" aria-live="polite"></div>';
   drawToasts();
   Object.keys(keep).forEach((id)=>{ const el=document.getElementById(id); if (el) { el.scrollLeft=keep[id][0]; el.scrollTop=keep[id][1]; } });
@@ -437,24 +728,69 @@ function renderMenu() {
     <div class="logo" style="font-size:min(54px,12.5vw)"><div class="suits">♠ ♥ ♦ ♣</div>Limpa's<br>Breakfast<small>🥞 🍳 ☕ TEAM CARD GAME</small></div>
     <div class="menu-fan">${fan}</div>
     <div class="menu-col">
-      <button class="btn" data-act="new">Start a new game</button>
-      <button class="btn ghost" data-act="join">Join a game</button>
+      ${resumeButtons()}
+      <button class="btn" data-act="new">Play on this phone</button>
+      <button class="btn green" data-act="createRoom">Play online with friends</button>
+      <button class="btn ghost" data-act="join">Join with a room code</button>
       <button class="btn ghost" data-act="rules">How to play</button>
       ${themePicker()}
       <div class="tagline">2 v 2 · play with friends on one phone, or against the computer</div>
     </div></div>`;
 }
 
+function resumeButtons() {
+  const h = readJSON('host'), g = readJSON('session');
+  let out = '';
+  if (h && h.code && h.G && h.G.phase !== 'over' && fresh(h)) out += `<button class="btn red" data-act="resumeHost">Resume your room ${esc(h.code)}</button>`;
+  else if (h && h.code && !h.G && fresh(h)) out += `<button class="btn red" data-act="resumeHost">Re-open your room ${esc(h.code)}</button>`;
+  if (g && g.code && fresh(g)) out += `<button class="btn red" data-act="rejoin">Rejoin room ${esc(g.code)}</button>`;
+  return out;
+}
 function renderJoin() {
+  const pf = profile();
   return `<div class="screen join"><div class="room"></div>
     <div class="logo" style="font-size:36px">Join a game</div>
-    <div class="menu-col" style="align-items:center">
-      <label for="gidIn" class="muted" style="font-size:13px">Enter the Game ID shared with you</label>
-      <input id="gidIn" placeholder="LB-XXXXX" maxlength="8" autocomplete="off" />
-      <button class="btn" data-act="doJoin" style="width:100%">Join</button>
-      <div class="muted" style="font-size:12px;text-align:center">${esc(UI.joinMsg)}</div>
-      <button class="btn ghost sm" data-act="home">← Back</button>
+    <div class="menu-col" style="align-items:stretch">
+      <label for="nameIn" class="muted jl">Your name</label>
+      <div class="namerow"><button class="ava" data-act="myAva" aria-label="Change your picture">${pf.avatar}</button><input id="nameIn" class="textin" value="${esc(pf.name)}" maxlength="14" autocomplete="off" /></div>
+      <label for="gidIn" class="muted jl">Room code (from your friend's invite)</label>
+      <input id="gidIn" class="textin code" placeholder="LB-XXXXX" maxlength="8" autocomplete="off" autocapitalize="characters" value="${esc(UI.joinCode || '')}" />
+      <button class="btn green" data-act="doJoin">Join</button>
+      <div class="joinmsg">${esc(UI.joinMsg)}</div>
+      <button class="btn ghost sm" data-act="home" style="align-self:center">← Back</button>
     </div></div>`;
+}
+
+function renderRoom() {
+  const N = UI.net, L = UI.lobby, host = isHost();
+  const stText = N.status === 'ready' || N.status === 'connected' ? '● Room open' : N.status === 'lost' ? 'Reconnecting…' : N.status === 'error' ? 'Not connected' : 'Connecting…';
+  const stCls = N.status === 'ready' || N.status === 'connected' ? 'ok' : N.status === 'error' || N.status === 'lost' ? 'bad' : '';
+  const head = `<div class="codebox"><small>ROOM CODE</small><b>${esc(N.code)}</b><span class="st ${stCls}">${stText}</span></div>`;
+  if (!L) return `<div class="screen room-screen"><div class="room"></div>${head}<div class="muted" style="font-size:15px">Joining…</div><button class="btn ghost sm" data-act="leaveRoom">← Cancel</button></div>`;
+  const seatRow = (i) => {
+    const sp = L.seats[i], mine = i === (host ? 0 : N.mySeat);
+    let right = '', left = `<span class="ava">${esc(sp.avatar)}</span><span class="rname">${esc(sp.name)}${mine ? ' <i class="you">you</i>' : ''}</span>`;
+    if (host && i === 0) left = `<button class="ava" data-act="myAva" aria-label="Change your picture">${esc(sp.avatar)}</button><input class="textin sm" data-seatname="0" value="${esc(sp.name)}" maxlength="14" aria-label="Your name" />`;
+    if (sp.bot) right = host ? `<button class="toggle on" data-act="roomSeat" data-seat="${i}" data-mode="open">🤖 Computer</button>` : `<span class="tag">🤖 Computer</span>`;
+    else if (i === 0) right = `<span class="tag">Host</span>`;
+    else if (sp.joined) right = host ? `<button class="toggle" data-act="roomSeat" data-seat="${i}" data-mode="kick">Remove</button>` : `<span class="tag ok">Here ✓</span>`;
+    else right = host ? `<button class="toggle" data-act="roomSeat" data-seat="${i}" data-mode="cpu">Use computer</button>` : `<span class="tag">Waiting…</span>`;
+    const wait = !sp.bot && !sp.joined && i > 0 ? '<span class="rname wait">Waiting for a friend…</span>' : '';
+    return `<div class="seat-row ${!sp.bot && !sp.joined && i > 0 ? 'open' : ''}">${wait ? `<span class="ava dim">🍽️</span>${wait}` : left}${right}</div>`;
+  };
+  const team = (t) => `<div class="team panel t${t}"><div class="tname">${host ? `<input class="team-name" data-team="${t}" value="${esc(L.teamNames[t])}" maxlength="16" aria-label="Team ${t + 1} name" />` : `<b>${esc(L.teamNames[t])}</b>`}</div>${seatRow(t)}${seatRow(t + 2)}</div>`;
+  const waiting = L.seats.filter((s) => !s.bot && !s.joined).length;
+  const share = `<div class="sharerow">
+      <button class="btn sm" data-act="share">Share invite</button>
+      <a class="btn sm green" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(shareText(N.code))}">WhatsApp</a>
+      <button class="btn sm ghost" data-act="copyLink">Copy link</button></div>`;
+  let foot;
+  if (host) foot = `${N.status === 'error' ? `<div class="joinmsg">${esc(N.error)}</div><button class="btn red" data-act="roomRetry">Try again</button>` : ''}
+      <div class="level" role="group" aria-label="Computer skill"><span>Computer players</span>${['easy', 'smart'].map((v) => `<button class="seg ${L.level === v ? 'on' : ''}" data-act="level" data-level="${v}" aria-pressed="${L.level === v}">${v === 'easy' ? 'Easy' : 'Smart'}</button>`).join('')}</div>
+      <button class="btn" data-act="startRoom" style="font-size:20px;padding:12px 40px" ${waiting || N.status === 'error' ? 'disabled' : ''}>▶ ${waiting ? 'Waiting for ' + waiting + ' more' : 'Start game'}</button>
+      <button class="btn ghost sm" data-act="leaveRoom">Close room</button>`;
+  else foot = `<div class="muted" style="font-size:16px;font-weight:700;text-align:center">Waiting for the host to start…</div><button class="btn ghost sm" data-act="leaveRoom">Leave room</button>`;
+  return `<div class="screen room-screen"><div class="room"></div>${head}${host ? share : ''}${team(0)}${team(1)}${foot}</div>`;
 }
 
 function renderLobby() {
@@ -488,9 +824,7 @@ const stackEdge = (n) => {
 
 function deckHTML(t) {
   const T = UI.G.teams[t];
-  if (T.deckStatus === 'unclaimed') return `<div class="deck" title="Extra deck: claim it by emptying your hand"><div class="back dstack"><b>${esc(T.name)}</b></div><span class="dl">Extra<br>deck</span></div>`;
-  if (T.deckStatus === 'claimed') return `<div class="deck done"><span class="pill ${T.deckUsed ? 'ok' : ''}">${T.deckUsed ? 'Deck used ✓' : 'Deck claimed'}</span></div>`;
-  return `<div class="deck done"><span class="pill bad">Deck −100</span></div>`;
+  return T.deckStatus === 'unclaimed' ? `<div class="deck" title="Extra deck: claim it by emptying your hand"><div class="back dstack"><b>${esc(T.name)}</b></div></div>` : '';
 }
 
 function renderGame() {
@@ -498,7 +832,7 @@ function renderGame() {
   const viewer = UI.viewer;
   const myTeam = E.teamOf(viewer), oppTeam = 1 - myTeam;
   const myTurn = !G.seats[G.turn].bot && G.turn === viewer && UI.cover === null && G.phase !== 'over' && !UI.spinning;
-  const showHand = humans().length <= 1 || G.turn === viewer || G.phase === 'over';
+  const showHand = !!UI.net || humans().length <= 1 || G.turn === viewer || G.phase === 'over';
   const playPhase = myTurn && G.phase === 'play';
   const cards = handOf(viewer);
   const M = UI.M = metrics(cards.length, showHand);
@@ -510,14 +844,14 @@ function renderGame() {
     const s = G.seats[seat];
     const on = G.turn === seat && G.phase !== 'over' && !UI.spinning;
     return `<div class="seat ${pos} ${on ? 'turn' : ''}" data-seat="${seat}" style="--tcrgb:var(--t${s.team}rgb)">
-      <div class="ring"><div class="ava">${s.avatar}${s.bot ? '<span class="bot">🤖</span>' : ''}</div></div>
+      <div class="ring"><div class="ava">${s.avatar}${s.bot ? '<span class="bot">🤖</span>' : ''}${s.away ? '<span class="away" title="Lost connection">⚠</span>' : ''}</div></div>
       <div class="nm">${esc(s.name)}</div></div>`;
   };
   // Face-down hand with the player's real card count.
   const fan = (pos, seat) => {
     let h = ''; const N = Math.max(1, G.seats[seat].hand.length), st = Math.min(6, 50 / Math.max(1, N - 1));
     for (let i = 0; i < N; i++) h += `<i class="back" style="--a:${((i - (N - 1) / 2) * st).toFixed(1)}deg"></i>`;
-    return `<div class="fan fan-${pos}">${h}<b class="fcnt" title="Cards in hand">${N}</b></div>`;
+    return `<div class="fan fan-${pos}">${h}</div>`;
   };
 
   const zone = (t, own) => {
@@ -526,7 +860,7 @@ function renderGame() {
       ? T.melds.map((m) => meldHTML(m, own && playPhase)).join('')
       : `<div class="empty">${own ? 'No melds yet. Select 3+ cards and tap New.' : 'No melds yet.'}</div>`;
     return `<div class="zonewrap ${own ? 'own' : 'opp'}" style="--tcrgb:var(--t${t}rgb)">
-      <span class="zlabel">${esc(T.name)} · ${own ? 'your team' : 'opponents'}</span>
+      <span class="zlabel">${esc(T.name)}</span>
       <div class="zone" id="${own ? 'ownArea' : 'oppArea'}">${deckHTML(t)}<div class="melds">${melds}</div></div></div>`;
   };
 
@@ -538,7 +872,7 @@ function renderGame() {
   let hint = '';
   if (UI.spinning) hint = 'Dealing…';
   else if (G.phase === 'over') hint = 'Game over';
-  else if (!myTurn) hint = G.seats[G.turn].name + (G.seats[G.turn].bot ? ' is playing…' : "'s turn");
+  else if (!myTurn) hint = G.seats[G.turn].away ? G.seats[G.turn].name + ' lost connection. Waiting…' : G.seats[G.turn].name + (G.seats[G.turn].bot ? ' is playing…' : "'s turn");
   else if (G.phase === 'draw') hint = G.finalTurn ? 'Final turn: use the pile or end' : 'Tap the stack or the top discard';
   else if (G.mustUse) hint = 'Use the glowing card, or tap Return';
   else hint = 'Drag to a meld or the pile';
@@ -547,11 +881,11 @@ function renderGame() {
   const mid = `<div class="mid" id="piles" data-drop="discard">
       <svg class="dir" viewBox="0 0 64 38" aria-hidden="true"><path d="M7 34C12 10 50 4 57 26" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round"/><path d="M63 24 55 37 47 25z" fill="currentColor"/></svg>
       <div class="stackwrap">${G.stack.length
-        ? `<div class="back stackcard ${canDraw ? 'can' : ''}" style="--th:${stackEdge(G.stack.length)}" ${canDraw ? 'data-act="draw" role="button" aria-label="Draw from centre"' : ''}></div><span class="cnt">${G.stack.length}</span>`
+        ? `<div class="back stackcard ${canDraw ? 'can' : ''}" style="--th:${stackEdge(G.stack.length)}" ${canDraw ? 'data-act="draw" role="button" aria-label="Draw from centre"' : ''}></div>`
         : '<div class="slot">Empty</div>'}</div>
       <div class="topwrap">${top
         ? cardHTML(top, 'topdis ' + (canPick ? 'can' : ''), canPick ? 'data-act="pickup" role="button" aria-label="Pick up the discard pile"' : '')
-        : '<div class="slot">Drop to throw</div>'}${G.discard.length > 1 ? `<span class="cnt" title="Cards in the discard pile">${G.discard.length}</span>` : ''}</div>
+        : '<div class="slot">Drop to throw</div>'}</div>
       <div class="history" id="history">${hist.map((c) => cardHTML(c, 'tc')).join('')}</div>
     </div>`;
 
@@ -644,7 +978,7 @@ function meldHTML(m, droppable) {
     return cardHTML(s.c, 'tc' + (wild?' wild':''), m.type==='seq' ? `data-r="${s.r}"` : '', tag);
   }).join('');
   return `<div class="meld ${st.cls} ${canDrop?'dropok':''}" data-act="openMeld" data-meld="${m.id}" ${canDrop?`data-drop="meld:${m.id}"`:''} id="meld-${m.id}">
-    <span class="badge">${st.text}</span>${items}</div>`;
+    ${st.cls ? `<span class="badge">${st.cls.includes('timpa') ? 'TIMPA' : '✓'}</span>` : ''}${items}</div>`;
 }
 
 function renderCover() {
@@ -673,6 +1007,18 @@ function renderModal() {
       <p>Adding a wildcard turns this completed <b>pure</b> meld <b>impure</b>. It will drop from <b>200 to 100</b> at the end of your turn, and it won't count as your team's pure meld for going out.</p>
       <div class="bigrow"><button class="btn ghost" data-act="close">Cancel</button><button class="btn red" data-act="confirmImpure">Continue</button></div>
     </div></div>`;
+  }
+  if (M.type === 'menu' && UI.net) {
+    return `<div class="ov"><div class="modal">
+      <h2>Room ${esc(UI.net.code)}</h2>
+      <p class="muted">${isHost() ? 'You are the host. Friends play on their own phones, and the game stays on yours, so keep this page open.' : 'You are playing on your own phone. The host runs the game.'}</p>
+      ${isHost() ? `<div class="sharerow" style="justify-content:flex-start"><button class="btn sm" data-act="share">Share invite</button><button class="btn sm ghost" data-act="copyLink">Copy link</button></div>` : ''}
+      <h3>Table colour &amp; sound</h3>${themePicker()}<div style="margin-top:8px" class="themes">${soundBtn()}</div>
+      <div class="bigrow" style="justify-content:flex-start">
+        <button class="btn ghost sm" data-act="rules">How to play</button>
+        <button class="btn red sm" data-act="quit">${isHost() ? 'Close room' : 'Leave'}</button>
+        <button class="btn sm" data-act="close">Resume</button>
+      </div></div></div>`;
   }
   if (M.type === 'menu') {
     return `<div class="ov"><div class="modal">
@@ -737,7 +1083,7 @@ function renderModal() {
         <tr><td>Penalties</td><td>${pen(b[0])}</td><td>${pen(b[1])}</td></tr>
         <tr class="tot"><td>Total</td><td>${b[0].total}</td><td>${b[1].total}</td></tr>
       </table>
-      <div class="bigrow"><button class="btn" data-act="again">Play again</button><button class="btn ghost" data-act="quit">Main menu</button><button class="btn ghost" data-act="close">View table</button></div>
+      <div class="bigrow">${isGuest() ? '<div class="muted" style="width:100%;text-align:center">Waiting for the host to start another game…</div>' : '<button class="btn" data-act="again">Play again</button>'}<button class="btn ghost" data-act="quit">${UI.net ? 'Leave room' : 'Main menu'}</button><button class="btn ghost" data-act="close">View table</button></div>
     </div></div>`;
   }
   return '';
@@ -772,14 +1118,16 @@ app.addEventListener('click', (e) => {
   const a = el.dataset.act; const G = UI.G;
   switch (a) {
     case 'new': UI.lobby = newLobby(); UI.screen = 'lobby'; render(); break;
-    case 'join': UI.screen = 'join'; UI.joinMsg = ''; render(); break;
+    case 'join': UI.screen = 'join'; UI.joinMsg = ''; UI.joinCode = ''; render(); break;
     case 'doJoin': {
-      const v = (document.getElementById('gidIn').value || '').trim().toUpperCase();
-      UI.joinMsg = !/^LB-[A-Z0-9]{5}$/.test(v) ? 'That ID looks wrong. It should look like LB-7KQ2M.'
-        : 'Online rooms are coming soon. For now, start a new game and play on one phone, with friends passing it round or with the computer.';
-      render(); break;
+      const nm = (document.getElementById('nameIn').value || '').trim().slice(0, 14) || 'Player';
+      store.set('name', nm);
+      const code = normCode(document.getElementById('gidIn').value);
+      UI.joinCode = code;
+      if (!ROOM_RE.test(code)) { UI.joinMsg = 'That code looks wrong. It should look like LB-7KQ2M.'; render(); break; }
+      joinRoom(code); break;
     }
-    case 'home': UI.screen = 'menu'; render(); break;
+    case 'home': UI.screen = 'menu'; UI.joinMsg = ''; render(); break;
     case 'rules': UI.modal = { type:'rules', prev:UI.modal }; render(); break;
     case 'close': UI.modal = (UI.modal && UI.modal.prev) || null; render(); break;
     case 'confirmImpure': {
@@ -798,8 +1146,24 @@ app.addEventListener('click', (e) => {
     }
     case 'sound': Sound.toggle(); render(); break;
     case 'theme': setTheme(el.dataset.theme); render(); break;
-    case 'level': UI.lobby.level = el.dataset.level; store.set('level', UI.lobby.level); render(); break;
+    case 'level': UI.lobby.level = el.dataset.level; store.set('level', UI.lobby.level); if (isHost()) broadcastLobby(); render(); break;
     case 'play': startGame(); break;
+    case 'createRoom': createRoom(); break;
+    case 'resumeHost': { const h = readJSON('host'); if (h) createRoom(h); break; }
+    case 'rejoin': { const g = readJSON('session'); if (g) joinRoom(g.code); break; }
+    case 'startRoom': startOnlineGame(); break;
+    case 'leaveRoom': leaveRoom(); break;
+    case 'share': shareRoom(); break;
+    case 'copyLink': copyText(roomLink(UI.net.code), 'Link copied.'); break;
+    case 'roomRetry': { const L = UI.lobby, t = isHost() ? UI.net.tokens : null; const keep = { lobby: L, tokens: t, G: UI.G }; const tr = UI.net.tr; try { tr.close(); } catch (e) {} clearInterval(UI.net.timer); createRoom(keep.lobby ? keep : null); break; }
+    case 'myAva': { const pf = profile(); const nx = AVATARS[(AVATARS.indexOf(pf.avatar) + 1) % AVATARS.length]; store.set('avatar', nx); if (isHost()) { UI.lobby.seats[0].avatar = nx; broadcastLobby(); } else if (isGuest()) guestSend({ t: 'profile', name: pf.name, avatar: nx }); render(); break; }
+    case 'roomSeat': {
+      const i = +el.dataset.seat, sp = UI.lobby.seats[i], N = UI.net, mode = el.dataset.mode;
+      if (mode === 'cpu') Object.assign(sp, { bot: true, joined: false, name: BOT_NAMES[i - 1] || 'Computer', avatar: AVATARS[i] });
+      else if (mode === 'open') Object.assign(sp, { bot: false, joined: false, name: 'Open seat', avatar: '🍽️' });
+      else if (mode === 'kick') { const k = Object.keys(N.peers).find((x) => N.peers[x] === i); if (k) { N.tr.send(k, { t: 'bye' }); hostDropSeat(i, k, false); } break; }
+      broadcastLobby(); render(); break;
+    }
     case 'menu': UI.modal = { type:'menu' }; render(); break;
     case 'seatBot': {
       const i = +el.dataset.seat; G.seats[i].bot = !G.seats[i].bot; UI.lobby.seats[i].bot = G.seats[i].bot;
@@ -808,8 +1172,8 @@ app.addEventListener('click', (e) => {
       toast(G.seats[i].bot ? G.seats[i].name + ' handed to the computer' : G.seats[i].name + ' is back', 'good');
       render(); onTurnChange(); render(); break;
     }
-    case 'redeal': case 'again': UI.modal = null; startGame(); break;
-    case 'quit': clearTimeout(UI.botTimer); UI.botTimer = null; UI.G = null; UI.modal = null; UI.cover = null; UI.screen = 'menu'; render(); break;
+    case 'redeal': case 'again': UI.modal = null; if (isHost()) startOnlineGame(); else startGame(); break;
+    case 'quit': if (UI.net) { leaveRoom(); break; } clearTimeout(UI.botTimer); UI.botTimer = null; UI.G = null; UI.modal = null; UI.cover = null; UI.screen = 'menu'; render(); break;
     case 'reveal': UI.viewer = UI.cover; UI.cover = null; armTimer(); render(); break;
     case 'sel': {
       if (G && G.turn !== UI.viewer) toast("It isn't your turn yet.");
@@ -845,7 +1209,12 @@ app.addEventListener('click', (e) => {
 app.addEventListener('input', (e) => {
   const t = e.target;
   if (t.dataset.team !== undefined) UI.lobby.teamNames[+t.dataset.team] = t.value || (t.dataset.team==='0'?'Bhujia':'Kachori');
-  if (t.dataset.seatname !== undefined) {
+  if (t.id === 'nameIn') store.set('name', t.value.trim().slice(0, 14) || 'Player');
+  if (isHost() && (t.dataset.team !== undefined || t.dataset.seatname !== undefined)) {
+    if (t.dataset.seatname !== undefined) { UI.lobby.seats[0].name = t.value.slice(0, 14) || 'Player'; store.set('name', UI.lobby.seats[0].name); }
+    clearTimeout(UI.lobbyT); UI.lobbyT = setTimeout(broadcastLobby, 250);
+  }
+  if (t.dataset.seatname !== undefined && !UI.net) {
     UI.lobby.seats[+t.dataset.seatname].name = t.value;
     const btn = app.querySelector('[data-act="play"]');
     if (btn) btn.disabled = !UI.lobby.seats.every((s)=>s.name.trim());
@@ -941,6 +1310,8 @@ function dropTarget(x, y) {
   return null;
 }
 
-window.__limpa = { UI, E, render, after, addToMeld, act };
+window.__limpa = { UI, E, render, after, addToMeld, act, NETCFG, ROOM_RE };
+{ const m = /[#&]room=([A-Za-z0-9-]+)/.exec(location.hash || '');
+  if (m) { UI.joinCode = normCode(m[1]); UI.screen = 'join'; try { history.replaceState(null, '', location.href.split('#')[0]); } catch (e) {} } }
 render();
 })();

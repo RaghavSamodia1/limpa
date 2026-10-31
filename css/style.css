@@ -376,3 +376,33 @@ table.res tr.tot td{font-weight:800;font-size:18px;color:var(--yellow);border-bo
 .fcnt{position:absolute;left:-15px;top:calc(var(--mh)*-.55 - 15px);z-index:5;min-width:30px;height:30px;padding:0 6px;border-radius:15px;background:var(--yellow);color:var(--ink);
   font-size:19px;font-weight:800;line-height:27px;text-align:center;border:2px solid #fff;box-shadow:0 2px 4px rgba(0,0,0,.5);font-variant-numeric:tabular-nums}
 .fan-t .fcnt{transform:rotate(180deg)} .fan-l .fcnt{transform:rotate(-90deg)} .fan-r .fcnt{transform:rotate(90deg)}
+
+/* online rooms */
+.btn.green{color:#0c3320}
+a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
+.codebox{display:flex;flex-direction:column;align-items:center;gap:2px}
+.codebox small{font-size:12px;letter-spacing:2px;font-weight:800;color:var(--muted)}
+.codebox b{font-size:34px;letter-spacing:4px;color:var(--yellow);text-shadow:0 2px 0 rgba(0,0,0,.4)}
+.codebox .st{font-size:14px;font-weight:800;padding:2px 12px;border-radius:999px;background:rgba(var(--ink-rgb),.7);color:var(--muted)}
+.codebox .st.ok{color:var(--good)} .codebox .st.bad{color:var(--bad)}
+.sharerow{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.room-screen{justify-content:flex-start;gap:12px}
+.room-screen .team{width:100%;padding:10px;display:flex;flex-direction:column;gap:8px}
+.room-screen .team.t0{border-color:var(--t0)} .room-screen .team.t1{border-color:var(--t1)}
+.room-screen .tname{font-size:20px;font-weight:800}
+.rname{flex:1;min-width:0;font-weight:800;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rname.wait{color:var(--muted);font-weight:700}
+.you{font-style:normal;font-size:11px;background:var(--yellow);color:var(--ink);border-radius:8px;padding:0 6px;margin-left:4px}
+.tag{font-size:13px;font-weight:800;padding:5px 10px;border-radius:9px;background:rgba(var(--ink-rgb),.7);border:1px solid var(--line)}
+.tag.ok{background:var(--good);color:var(--ink);border-color:var(--good)}
+.seat-row.open{border:2px dashed var(--line)}
+.ava.dim{opacity:.6}
+.textin{background:var(--ui-deep);border:2px solid var(--line);border-radius:12px;color:#fff;padding:10px 12px;font-size:18px;font-weight:700;width:100%}
+.textin.sm{padding:7px 8px;font-size:16px;flex:1;min-width:0;border-width:1px;border-radius:9px}
+.textin.code{font-size:24px;letter-spacing:3px;text-transform:uppercase;text-align:center}
+.namerow{display:flex;gap:10px;align-items:center}
+.jl{font-size:14px;font-weight:700}
+.joinmsg{min-height:20px;font-size:14px;font-weight:700;color:var(--yellow);text-align:center}
+.netbar{position:absolute;left:0;right:0;top:0;z-index:80;padding:calc(6px + env(safe-area-inset-top)) 12px 6px;background:var(--bad);color:#fff;font-weight:800;font-size:14px;text-align:center}
+.away{position:absolute;left:-5px;bottom:-3px;font-size:13px;line-height:1;background:var(--bad);color:#fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center}
+#app:not(.ingame) #toast{bottom:calc(20px + env(safe-area-inset-bottom))}
