@@ -65,9 +65,16 @@ const Sound = (() => {
 })();
 const soundBtn = () => `<button class="theme-btn" data-act="sound" aria-pressed="${Sound.on}"><span class="sw snd">${Sound.on ? '🔊' : '🔇'}</span>Sound ${Sound.on ? 'on' : 'off'}</button>`;
 
+/* Comfort settings (saved on this phone) */
+const setting = {
+  hints: () => store.get('hints') !== 'off',                        // show a suggestion at every step
+  timer: () => !!UI.net || store.get('timer') !== 'off',            // the 60-second draw timer (always on in online games)
+  slow: () => store.get('speed') === 'slow',                        // slower computer players
+};
+
 const UI = {
   screen:'menu', lobby:null, G:null, viewer:null, cover:null, spinning:false,
-  tilt:TILT0, sel:new Set(), order:{}, deadline:null, deadlineKey:null, botTimer:null,
+  tilt:TILT0, step:'meld', peek:null, peekStage:null, helpShown:false, hintKey:'', hint:null, sel:new Set(), order:{}, deadline:null, deadlineKey:null, botTimer:null,
   modal:null, shake:null, dealing:false, toasts:[], joinMsg:'', M:null,
 };
 
@@ -164,7 +171,7 @@ function runSpinner() {
 
 function onTurnChange() {
   const G = UI.G; if (!G) return;
-  UI.sel.clear();
+  UI.sel.clear(); UI.step = 'meld'; UI.helpShown = false; UI.hintKey = '';
   if (UI.net) {                                   // online: everyone keeps their own seat, nobody passes a phone
     if (G.phase === 'over') { UI.modal = { type:'results' }; UI.deadline = null; return; }
     if (G.turn === UI.viewer) { Sound.play('turn'); if (navigator.vibrate) { try { navigator.vibrate(40); } catch (e) {} } }
@@ -186,6 +193,7 @@ function onTurnChange() {
 function armTimer() {
   const G = UI.G;
   if (!G || G.phase !== 'draw' || G.seats[G.turn].bot || UI.cover !== null || UI.spinning) return;
+  if (!setting.timer()) { UI.deadline = null; return; }     // relaxed mode: no timer
   if (UI.net && G.turn !== UI.viewer) return;       // online: only your own turn has your timer
   const key = G.turnNo + '-' + (G.pileRefused ? 1 : 0);
   if (UI.deadlineKey === key) return;
@@ -205,7 +213,7 @@ function scheduleBot() {
     let r = E.apply(G, seat, act);
     if (!r.ok) r = E.apply(G, seat, { type: G.phase === 'draw' ? 'timeout' : 'discard', cardId: G.seats[seat].hand[0] && G.seats[seat].hand[0].id });
     after(r, seat, prevTurn, act && act.type);
-  }, 560);
+  }, setting.slow() ? 1400 : 560);
 }
 
 function act(action, quiet) {
@@ -214,15 +222,16 @@ function act(action, quiet) {
   const prevTurn = G.turnNo;
   const r = E.apply(G, seat, action);
   if (!r.ok) { Sound.play('error'); if (!quiet) toast(r.error, 'err'); return r; }
-  if (action.type === 'draw' || action.type === 'pickup') UI.deadline = null;
+  if (action.type === 'draw' || action.type === 'pickup') { UI.deadline = null; UI.step = 'meld'; }
   if (action.type === 'pickup') UI.sel = new Set([G.mustUse]);
   else UI.sel.clear();
+  UI.helpShown = false;
   after(r, seat, prevTurn, action.type);
   return r;
 }
 
-function addToMeld(meldId, cardIds, wildPos) {
-  const action = { type:'addToMeld', meldId, cardIds, wildPos };
+function addToMeld(meldId, cardIds, wildPos, confirmImpure) {
+  const action = { type:'addToMeld', meldId, cardIds, wildPos, confirmImpure };
   const r = act(action, true);
   if (r.ok) return r;
   if (r.code === 'confirmImpure') { UI.modal = { type:'confirmImpure', action }; render(); return r; }
@@ -502,7 +511,7 @@ function applyRemote(m) {
     const quiet = a.seat !== me;
     Sound.play(a.type === 'draw' || a.type === 'pickup' || a.type === 'timeout' ? 'draw' : a.type === 'discard' ? 'throw' : a.type === 'newMeld' || a.type === 'addToMeld' ? 'place' : '', quiet);
     (m.events || []).forEach((e) => { if (quiet && e.kind === 'info' && /picked up|returned the pile/.test(e.text)) toast(e.text); });
-    if (a.seat === me) { if (a.type === 'draw' || a.type === 'pickup') UI.deadline = null; if (a.type === 'pickup') UI.sel = new Set([G.mustUse]); else UI.sel.clear(); }
+    if (a.seat === me) { UI.helpShown = false; if (a.type === 'draw' || a.type === 'pickup') { UI.deadline = null; UI.step = 'meld'; } if (a.type === 'pickup') UI.sel = new Set([G.mustUse]); else UI.sel.clear(); }
   }
   if (G.phase === 'over') {
     if (!UI.modal || UI.modal.type !== 'results') { UI.modal = { type: 'results' }; Sound.play(G.result.winner === E.teamOf(me) ? 'win' : G.result.winner === null ? 'turn' : 'lose'); }
@@ -541,6 +550,53 @@ function copyText(txt, ok) {
   (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast(ok, 'good')).catch(() => toast(txt));
 }
 
+/* ---------------- assistance: what to do next, in plain words ----------------
+   The suggestion comes from the same Smart player the computer uses, asked what it would do in your seat. */
+function stageOf(G, myTurn) {
+  if (!G || G.phase === 'over' || !myTurn) return 'watch';
+  if (G.phase === 'draw') return 'draw';
+  if (G.mustUse) return 'meld';
+  return UI.step === 'throw' ? 'throw' : 'meld';
+}
+function computeHint(stage) {
+  const G = UI.G, seat = UI.viewer;
+  if (!G || G.turn !== seat || G.phase === 'over') return null;
+  const probe = JSON.parse(JSON.stringify(G));
+  probe.seats[seat].level = 'smart'; probe.seats[seat].params = null;
+  let a = null; try { a = E.botNextAction(probe, seat); } catch (e) { return null; }
+  if (!a) return null;
+  const hand = G.seats[seat].hand, nm = (id) => { const c = hand.find((x) => x.id === id); return c ? E.cardName(c) : 'card'; };
+  switch (a.type) {
+    case 'draw': return { action: a, target: 'stack', text: 'Draw a card from the deck.' };
+    case 'pickup': { const top = G.discard[G.discard.length - 1]; return { action: a, target: 'pile', text: 'Take the pile. The ' + (top ? E.cardName(top) : 'top card') + ' can be used.' }; }
+    case 'returnPile': return { action: a, text: "That card can't be used. Return the pile and draw instead." };
+    case 'newMeld': return stage === 'throw' ? { goMeld: true, text: 'A meld is still possible. Go back to Step 2.' } : { action: a, cards: a.cardIds, text: 'Make a new meld with the ' + a.cardIds.length + ' glowing cards.' };
+    case 'addToMeld': {
+      if (stage === 'throw') return { goMeld: true, text: 'A card still fits a meld. Go back to Step 2.' };
+      const m = G.teams[E.teamOf(seat)].melds.find((x) => x.id === a.meldId);
+      return { action: a, cards: a.cardIds, meldId: a.meldId, text: 'Add the ' + nm(a.cardIds[0]) + ' to the glowing ' + (m && m.type === 'set' ? 'set' : 'run') + '.' };
+    }
+    case 'discard': return stage === 'throw' ? { action: a, cards: [a.cardId], text: 'Throw the ' + nm(a.cardId) + '.' } : { goThrow: true, text: 'No more melds worth making. Go to Step 3 and throw a card.' };
+    case 'endGame': return { action: a, text: 'End the game.' };
+  }
+  return null;
+}
+// The suggestion for this exact position, worked out once and kept until something changes.
+function currentHint(stage) {
+  const G = UI.G, key = [G.turnNo, G.phase, UI.step, UI.viewer, G.seats[UI.viewer].hand.length, G.teams[0].melds.length + '/' + G.teams[1].melds.length, G.discard.length].join('-');
+  if (UI.hintKey !== key) { UI.hintKey = key; UI.hint = stage === 'watch' ? null : computeHint(stage); UI.helpShown = false; }
+  return UI.hint;
+}
+function useHint(h) {
+  if (!h) return;
+  if (h.goThrow) { UI.step = 'throw'; UI.sel.clear(); render(); return; }
+  if (h.goMeld) { UI.step = 'meld'; UI.sel.clear(); render(); return; }
+  const a = h.action;
+  UI.hintKey = ''; UI.helpShown = false;
+  if (a.type === 'addToMeld') addToMeld(a.meldId, a.cardIds, undefined, a.confirmImpure);
+  else act(a);
+}
+
 /* ---------------- hand order & layout ---------------- */
 function sortIds(hand) {
   return hand.slice().sort((a,b) => (SUIT_ORDER[a.s]-SUIT_ORDER[b.s]) || ((b.r===1?14:b.r)-(a.r===1?14:a.r))).map((c)=>c.id);
@@ -551,7 +607,7 @@ function handOf(seat) {
   if (!ord) ord = UI.order[seat] = sortIds(hand);
   const ids = new Set(hand.map((c)=>c.id));
   ord = ord.filter((id)=>ids.has(id));
-  hand.forEach((c)=>{ if (!ord.includes(c.id)) ord.push(c.id); });
+  if (hand.some((c)=>!ord.includes(c.id))) ord = sortIds(hand);       // a new card arrived: tidy the whole hand
   UI.order[seat] = ord;
   const byId = {}; hand.forEach((c)=>{ byId[c.id]=c; });
   return ord.map((id)=>byId[id]);
@@ -580,19 +636,19 @@ function metrics(n, showHand) {
   const per = Math.ceil(Math.max(1, n) / rows);
   const step = per > 1 ? Math.min(maxStep, avail / (per - 1)) : 0;
   const rowStep = hh * .5, R = hh * 4.5;
-  const actH = 56, safeB = inset('bottom'), safeT = inset('top');
+  const actH = 56, guideH = 96, safeB = inset('bottom'), safeT = inset('top');
   const handH = (showHand ? hh * .95 + (rows - 1) * rowStep : hh * .62) + safeB;
-  const dockH = actH + handH;
+  const dockH = guideH + actH + handH;
   const c = Math.cos(UI.tilt * Math.PI / 180), s = Math.sin(UI.tilt * Math.PI / 180);
   const yb = H - (dockH - 30);                 // near edge of the table top, just under the dock edge
   const yf = Math.max(70, safeT + 78);         // far edge of the table on screen
   const yo = Math.max(10, safeT + 30);         // vanishing point of the perspective
   const ph = Math.max(300, PERSP * (yb - yf) / ((yf - yo) * s + PERSP * c));
-  return { W, H, hw, hh, rows, per, step, rowStep, R, actH, handH, dockH, safeT, safeB, ph, yo };
+  return { W, H, hw, hh, rows, per, step, rowStep, R, actH, guideH, handH, dockH, safeT, safeB, ph, yo };
 }
 function setVars(M) {
   const st = app.style;
-  st.setProperty('--dock-h', M.dockH + 'px'); st.setProperty('--act-h', M.actH + 'px'); st.setProperty('--hand-h', M.handH + 'px');
+  st.setProperty('--dock-h', M.dockH + 'px'); st.setProperty('--act-h', M.actH + 'px'); st.setProperty('--guide-h', M.guideH + 'px'); st.setProperty('--hand-h', M.handH + 'px');
   st.setProperty('--ph', M.ph.toFixed(1) + 'px'); st.setProperty('--po', M.yo + 'px');
   st.setProperty('--sat', M.safeT + 'px');
   st.setProperty('--tilt', UI.tilt + 'deg'); st.setProperty('--persp', PERSP + 'px');
@@ -631,6 +687,7 @@ function launch(node, from, to, delay, fade, done) {
   a.finished.then(end, end);
 }
 function flyCard(el, from, delay) {
+  if (!el.offsetParent) return;                               // its mat is hidden in this step
   const cid = el.dataset.cid, to = geom(el, !!el.closest('.hand'));
   const node = el.cloneNode(true);
   ['data-cid', 'data-id', 'data-act', 'data-drag', 'data-drop', 'role', 'aria-label', 'aria-pressed'].forEach((a) => node.removeAttribute(a));
@@ -657,7 +714,7 @@ function playFlights(before) {
     const z = zoneOf(el); if (z === 'other') return;
     const prev = before.cards[el.dataset.cid];
     let from = null;
-    if (prev) { if (prev.zone !== z && !(pile(prev.zone) && pile(z))) from = prev; }   // a discard just slides down the pile
+    if (prev) { if (!prev.pw) from = null; else if (prev.zone !== z && !(pile(prev.zone) && pile(z))) from = prev; }   // a discard just slides down the pile
     else if (z === 'hand') from = el.querySelector('.xd') ? before.deck : before.stack;
     else if (src) from = src;
     if (from) flyCard(el, from, Math.min(n++, 14) * 28);
@@ -685,7 +742,7 @@ function fitMelds() {
   let worst = 1;
   app.querySelectorAll('.zone').forEach((zone) => {
     const melds = zone.querySelector('.melds'), first = melds && melds.querySelector('.tc');
-    if (!first) return;
+    if (!first || !zone.offsetParent) return;                 // nothing to fit while a mat is hidden
     const mw0 = first.offsetWidth; let mw = mw0;
     for (let i = 0; i < 24 && zone.scrollHeight > zone.clientHeight + 1 && mw > 20; i++) {
       mw *= .94; melds.style.setProperty('--mw', mw.toFixed(1) + 'px');
@@ -858,7 +915,7 @@ function renderGame() {
   const zone = (t, own) => {
     const T = G.teams[t];
     const melds = T.melds.length
-      ? T.melds.map((m) => meldHTML(m, own && playPhase)).join('')
+      ? T.melds.map((m) => meldHTML(m, own && playPhase, own && hintOn && H.meldId === m.id)).join('')
       : `<div class="empty">${own ? 'No melds yet. Select 3+ cards and tap New.' : 'No melds yet.'}</div>`;
     return `<div class="zonewrap ${own ? 'own' : 'opp'}" style="--tcrgb:var(--t${t}rgb)">
       <span class="zlabel">${esc(T.name)}</span>
@@ -870,22 +927,36 @@ function renderGame() {
   const top = G.discard[G.discard.length - 1];
   const hist = G.discard.slice(0, -1).reverse();
 
-  let hint = '';
-  if (UI.spinning) hint = 'Dealing…';
-  else if (G.phase === 'over') hint = 'Game over';
-  else if (!myTurn) hint = G.seats[G.turn].away ? G.seats[G.turn].name + ' lost connection. Waiting…' : G.seats[G.turn].name + (G.seats[G.turn].bot ? ' is playing…' : "'s turn");
-  else if (G.phase === 'draw') hint = G.finalTurn ? 'Final turn: use the pile or end' : 'Tap the stack or the top discard';
-  else if (G.mustUse) hint = 'Use the glowing card, or tap Return';
-  else hint = 'Drag to a meld or the pile';
+  const stage = stageOf(G, myTurn);
+  if (UI.peekStage !== stage) { UI.peek = null; UI.peekStage = stage; }
+  const H = stage !== 'watch' ? currentHint(stage) : null;           // the suggestion for this step
+  const hintOn = !!H && (setting.hints() || UI.helpShown);            // shown automatically (setting) or after tapping Help
+  const hl = hintOn && H.cards ? new Set(H.cards) : new Set();
   const returnBtn = myTurn && G.mustUse, endBtn = myTurn && G.finalTurn && !G.mustUse;
+  // plain-language instruction for this step
+  const who = G.seats[G.turn];
+  const STEP = { draw: ['Step 1 of 3', 'Draw a card', G.finalTurn ? 'Final turn: take the pile, or end the game.' : 'Tap Draw card for a new card, or Take pile to pick up the whole pile.'],
+    meld: ['Step 2 of 3', 'Make melds (optional)', G.mustUse ? 'Use the glowing card in a meld, or tap Return to draw instead.' : 'Tap cards in your hand, then Place. Or tap one of your melds to add the cards.'],
+    throw: ['Step 3 of 3', 'Throw one card', 'Tap the card you want to get rid of, then tap Throw.'] };
+  let g1 = '', g2 = '';
+  if (UI.spinning) { g1 = 'Dealing the cards…'; }
+  else if (G.phase === 'over') { g1 = 'Game over'; }
+  else if (stage === 'watch') { g1 = who.away ? who.name + ' lost connection' : who.name + (who.bot ? ' is playing…' : "'s turn"); g2 = who.away ? 'Waiting for them to come back.' : 'Watch the table, or look at the melds below.'; }
+  else { g1 = `<b class="stepno">${STEP[stage][0]}</b> ${STEP[stage][1]}`; g2 = hintOn ? '💡 ' + H.text : STEP[stage][2]; }
+  const viewNow = UI.peek || 'auto';
+  const showOwn = stage === 'meld' ? viewNow !== 'opp' && viewNow !== 'piles' : stage === 'watch' ? viewNow !== 'opp' && viewNow !== 'piles' : viewNow === 'mine';
+  const showOpp = stage === 'watch' ? viewNow !== 'mine' && viewNow !== 'piles' : viewNow === 'opp';
+  const pilesBig = (stage === 'draw' || stage === 'throw') ? viewNow !== 'mine' && viewNow !== 'opp' : viewNow === 'piles';
+  const views = `<div class="views" role="group" aria-label="What to look at">${[['mine', 'Your melds'], ['opp', 'Their melds'], ['piles', 'Piles']].map(([v, t]) =>
+    `<button class="vchip ${viewNow === v ? 'on' : ''}" data-act="peek" data-v="${v}" aria-pressed="${viewNow === v}">${t}</button>`).join('')}</div>`;
 
   const mid = `<div class="mid" id="piles" data-drop="discard">
       <svg class="dir" viewBox="0 0 64 38" aria-hidden="true"><path d="M7 34C12 10 50 4 57 26" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round"/><path d="M63 24 55 37 47 25z" fill="currentColor"/></svg>
       <div class="stackwrap">${G.stack.length
-        ? `<div class="back stackcard ${canDraw ? 'can' : ''}" style="--th:${stackEdge(G.stack.length)}" ${canDraw ? 'data-act="draw" role="button" aria-label="Draw from centre"' : ''}></div>`
+        ? `<div class="back stackcard ${canDraw ? 'can' : ''} ${hintOn && H.target === 'stack' ? 'hintg' : ''}" style="--th:${stackEdge(G.stack.length)}" ${canDraw ? 'data-act="draw" role="button" aria-label="Draw from centre"' : ''}></div>`
         : '<div class="slot">Empty</div>'}</div>
       <div class="topwrap">${top
-        ? cardHTML(top, 'topdis ' + (canPick ? 'can' : ''), canPick ? 'data-act="pickup" role="button" aria-label="Pick up the discard pile"' : '')
+        ? cardHTML(top, 'topdis ' + (canPick ? 'can' : '') + (hintOn && H.target === 'pile' ? ' hintg' : ''), canPick ? 'data-act="pickup" role="button" aria-label="Pick up the discard pile"' : '')
         : '<div class="slot">Drop to throw</div>'}</div>
       <div class="history" id="history">${hist.map((c) => cardHTML(c, 'tc')).join('')}</div>
     </div>`;
@@ -898,13 +969,20 @@ function renderGame() {
     newValid = E.checkNewMeld(selCards, sets).ok;
   }
   const on = playPhase;
-  const ctl = `<span class="ctl">
-      ${returnBtn ? `<button class="btn ghost" data-act="returnPile" aria-label="Return the pile and draw instead">↩ Return</button>`
-        : `<button class="btn ghost" data-act="sort" ${showHand ? '' : 'disabled'} aria-label="Sort hand">⇅ Sort</button>`}
-      <button class="btn ${newValid ? 'green place' : ''}" data-act="newMeld" id="newBtn" ${on && selCards.length >= 3 ? '' : 'disabled'}>${newValid ? 'Place ✓' : 'New'}</button>
-      ${endBtn ? `<button class="btn red" data-act="endGame">End game</button>`
-        : `<button class="btn red" data-act="discard" ${on && !G.finalTurn && selCards.length === 1 && !G.mustUse ? '' : 'disabled'}>Throw</button>`}
-    </span>`;
+  const thrower = selCards.length === 1 ? E.cardName(selCards[0]) : '';
+  const helpBtn = `<button class="btn ghost help ${hintOn ? 'on' : ''}" data-act="help" ${H ? '' : 'disabled'} aria-label="${hintOn ? 'Do the suggested move for me' : 'Show me what to do'}">${hintOn ? 'Do it ✓' : '💡 Help'}</button>`;
+  let ctl = '';
+  if (stage === 'draw') ctl = `<span class="ctl">
+      ${G.finalTurn && !G.stack.length ? `<button class="btn red" data-act="endGame">End game</button>` : `<button class="btn green" data-act="draw" ${canDraw ? '' : 'disabled'}>Draw card</button>`}
+      <button class="btn" data-act="pickup" ${canPick ? '' : 'disabled'}>Take pile</button>${helpBtn}</span>`;
+  else if (stage === 'meld') ctl = `<span class="ctl">
+      ${returnBtn ? `<button class="btn ghost" data-act="returnPile" aria-label="Return the pile and draw instead">↩ Return</button>` : helpBtn}
+      <button class="btn ${newValid ? 'green place' : ''}" data-act="newMeld" id="newBtn" ${on && selCards.length >= 3 ? '' : 'disabled'}>${newValid ? 'Place ✓' : 'New meld'}</button>
+      ${returnBtn ? helpBtn : `<button class="btn red" data-act="goThrow">Throw ›</button>`}</span>`;
+  else if (stage === 'throw') ctl = `<span class="ctl">
+      <button class="btn ghost" data-act="goMeld">‹ Melds</button>${helpBtn}
+      ${endBtn ? `<button class="btn red" data-act="endGame">End game</button>` : `<button class="btn red" data-act="discard" id="throwBtn" ${selCards.length === 1 && !G.finalTurn ? '' : 'disabled'}>${thrower ? 'Throw ' + esc(thrower) : 'Throw'}</button>`}</span>`;
+  else ctl = '<span class="ctl"></span>';
 
   const showTimer = myTurn && G.phase === 'draw' && UI.deadline;
   const msLeft = showTimer ? Math.max(0, UI.deadline - Date.now()) : 0;
@@ -924,6 +1002,7 @@ function renderGame() {
       const cls = ['hc'];
       if (UI.sel.has(c.id)) cls.push('sel');
       if (G.mustUse === c.id) cls.push('must');
+      if (hl.has(c.id)) cls.push('hintc');
       if (G.lastDrawn === c.id && G.turn === viewer && G.phase === 'play' && G.drewFrom === 'stack') cls.push('fresh');
       if (UI.dealing) cls.push('deal');
       const style = `style="--rot:${rot.toFixed(2)}deg;--org:50% ${(M.hh / 2 + M.R).toFixed(1)}px;top:${(row * M.rowStep).toFixed(1)}px;z-index:${i + 1};${UI.dealing ? `animation-delay:${i * 45}ms` : ''}"`;
@@ -934,7 +1013,7 @@ function renderGame() {
     handHTML = `<div class="hand"><div class="hidden"><div class="back"></div><span>Hand hidden while others play</span></div></div>`;
   }
 
-  return `<div class="game">
+  return `<div class="game stage-${stage} ${showOwn ? 'show-own' : ''} ${showOpp ? 'show-opp' : ''} ${pilesBig ? 'piles-big' : 'piles-small'}">
     <div class="room"></div>
     <div class="stage"><div class="plane" id="plane">
       <div class="tablefill"></div>
@@ -950,7 +1029,7 @@ function renderGame() {
     </div>
     <div class="seats">${seatChip(seatAt(1), 'l')}${seatChip(seatAt(2), 't')}${seatChip(seatAt(3), 'r')}</div>
     <div class="dock">
-      <div class="cta"><span class="hint">${esc(hint)}</span></div>
+      <div class="cta">${views}<div class="guide"><div class="g1">${g1}</div>${g2 ? `<div class="g2">${esc(g2)}</div>` : ''}</div></div>
       <div class="actions">${meBlock}${ctl}</div>
       <div class="handwrap">${handHTML}</div>
     </div>
@@ -969,7 +1048,7 @@ function meldStatus(m) {
   return { cls:'', text: n + '/7' };
 }
 
-function meldHTML(m, droppable) {
+function meldHTML(m, droppable, hinted) {
   const cards = m.type === 'seq' ? m.slots : m.cards.map((c)=>({ c, r:m.rank }));
   const st = meldStatus(m);
   const canDrop = droppable && !E.isClosed(m);
@@ -978,7 +1057,7 @@ function meldHTML(m, droppable) {
     const tag = wild && m.type === 'seq' ? `<span class="rep">=${E.rankTxt(s.r)}</span>` : '';
     return cardHTML(s.c, 'tc' + (wild?' wild':''), m.type==='seq' ? `data-r="${s.r}"` : '', tag);
   }).join('');
-  return `<div class="meld ${st.cls} ${canDrop?'dropok':''}" data-act="openMeld" data-meld="${m.id}" ${canDrop?`data-drop="meld:${m.id}"`:''} id="meld-${m.id}">
+  return `<div class="meld ${st.cls} ${canDrop?'dropok':''} ${hinted ? 'hintm' : ''}" data-act="openMeld" data-meld="${m.id}" ${canDrop?`data-drop="meld:${m.id}"`:''} id="meld-${m.id}">
     ${st.cls ? `<span class="badge">${st.cls.includes('timpa') ? 'TIMPA' : '✓'}</span>` : ''}${items}</div>`;
 }
 
@@ -1014,6 +1093,10 @@ function renderModal() {
       <h2>Room ${esc(UI.net.code)}</h2>
       <p class="muted">${isHost() ? 'You are the host. Friends play on their own phones, and the game stays on yours, so keep this page open.' : 'You are playing on your own phone. The host runs the game.'}</p>
       ${isHost() ? `<div class="sharerow" style="justify-content:flex-start"><button class="btn sm" data-act="share">Share invite</button><button class="btn sm ghost" data-act="copyLink">Copy link</button></div>` : ''}
+      <h3>Comfort</h3><div class="themes">
+        <button class="theme-btn" data-act="setting" data-key="hints" aria-pressed="${setting.hints()}"><span class="sw snd">💡</span>Suggestions ${setting.hints() ? 'on' : 'off'}</button>
+        ${UI.net ? '' : `<button class="theme-btn" data-act="setting" data-key="timer" aria-pressed="${store.get('timer') !== 'off'}"><span class="sw snd">⏱</span>Timer ${store.get('timer') !== 'off' ? 'on' : 'off'}</button>`}
+        <button class="theme-btn" data-act="setting" data-key="slow" aria-pressed="${setting.slow()}"><span class="sw snd">🐢</span>Computer ${setting.slow() ? 'slow' : 'normal'}</button></div>
       <h3>Table colour &amp; sound</h3>${themePicker()}<div style="margin-top:8px" class="themes">${soundBtn()}</div>
       <div class="bigrow" style="justify-content:flex-start">
         <button class="btn ghost sm" data-act="rules">How to play</button>
@@ -1028,6 +1111,10 @@ function renderModal() {
       ${G.seats.map((s,i)=>`<div class="seat-row" style="margin-bottom:6px"><div class="ava" style="width:32px;height:32px;font-size:17px;border-width:2px">${s.avatar}</div>
         <div style="flex:1;font-weight:700">${esc(s.name)} <span class="muted" style="font-size:11px">· ${esc(G.teams[s.team].name)}</span></div>
         <button class="toggle ${s.bot?'on':''}" data-act="seatBot" data-seat="${i}">${s.bot?'🤖 Computer':'🙂 Human'}</button></div>`).join('')}
+      <h3>Comfort</h3><div class="themes">
+        <button class="theme-btn" data-act="setting" data-key="hints" aria-pressed="${setting.hints()}"><span class="sw snd">💡</span>Suggestions ${setting.hints() ? 'on' : 'off'}</button>
+        ${UI.net ? '' : `<button class="theme-btn" data-act="setting" data-key="timer" aria-pressed="${store.get('timer') !== 'off'}"><span class="sw snd">⏱</span>Timer ${store.get('timer') !== 'off' ? 'on' : 'off'}</button>`}
+        <button class="theme-btn" data-act="setting" data-key="slow" aria-pressed="${setting.slow()}"><span class="sw snd">🐢</span>Computer ${setting.slow() ? 'slow' : 'normal'}</button></div>
       <h3>Table colour &amp; sound</h3>${themePicker()}<div style="margin-top:8px" class="themes">${soundBtn()}</div>
       <div class="bigrow" style="justify-content:flex-start">
         <button class="btn ghost sm" data-act="rules">How to play</button>
@@ -1179,7 +1266,9 @@ app.addEventListener('click', (e) => {
     case 'sel': {
       if (G && G.turn !== UI.viewer) toast("It isn't your turn yet.");
       const id = el.dataset.id;
-      if (UI.sel.has(id)) UI.sel.delete(id); else UI.sel.add(id);
+      if (G && stageOf(G, G.turn === UI.viewer && !G.seats[G.turn].bot && G.phase !== 'over') === 'throw') { if (UI.sel.has(id)) UI.sel.clear(); else UI.sel = new Set([id]); }
+      else if (UI.sel.has(id)) UI.sel.delete(id); else UI.sel.add(id);
+      UI.helpShown = UI.helpShown && false;
       render(); break;
     }
     case 'sort': UI.order[UI.viewer] = sortIds(G.seats[UI.viewer].hand); render(); break;
@@ -1204,7 +1293,30 @@ app.addEventListener('click', (e) => {
       break;
     }
     case 'discard': act({ type:'discard', cardId:[...UI.sel][0] }); break;
-    case 'openMeld': UI.modal = { type:'meld', meldId: el.dataset.meld }; render(); break;
+    case 'openMeld': {
+      // with cards selected, tapping one of your own melds adds them (no dragging needed)
+      const mine = G && el.dataset.drop && UI.sel.size && stageOf(G, G.turn === UI.viewer && G.phase === 'play') === 'meld';
+      if (mine) { const ids = [...UI.sel]; const r = addToMeld(el.dataset.meld, ids, hasWild(ids) ? defaultWildPos(el.dataset.meld) : undefined); break; }
+      UI.modal = { type:'meld', meldId: el.dataset.meld }; render(); break;
+    }
+    case 'goThrow': UI.step = 'throw'; UI.sel.clear(); UI.helpShown = false; render(); break;
+    case 'goMeld': UI.step = 'meld'; UI.sel.clear(); UI.helpShown = false; render(); break;
+    case 'peek': UI.peek = UI.peek === el.dataset.v ? null : el.dataset.v; render(); break;
+    case 'help': {
+      const stage = stageOf(G, G.turn === UI.viewer && !G.seats[G.turn].bot && G.phase !== 'over'), H = currentHint(stage);
+      if (!H) break;
+      if (setting.hints() || UI.helpShown) { useHint(H); break; }          // second tap: do it
+      UI.helpShown = true;
+      if (H.cards && H.action && H.action.type === 'newMeld') UI.sel = new Set(H.cards);      // select the cards for the player
+      if (H.cards && H.action && H.action.type === 'addToMeld') UI.sel = new Set(H.cards);
+      if (H.cards && H.action && H.action.type === 'discard') UI.sel = new Set(H.cards);
+      render(); break;
+    }
+    case 'setting': {
+      const k = el.dataset.key; const cur = k === 'hints' ? setting.hints() : k === 'timer' ? store.get('timer') !== 'off' : setting.slow();
+      store.set(k === 'slow' ? 'speed' : k, k === 'hints' ? (cur ? 'off' : 'on') : k === 'timer' ? (cur ? 'off' : 'on') : (cur ? 'normal' : 'slow'));
+      UI.hintKey = ''; render(); break;
+    }
   }
 });
 app.addEventListener('input', (e) => {
@@ -1254,6 +1366,7 @@ window.addEventListener('pointermove', (e) => {
   showInsBar(tgt, e.clientX);
 }, { passive:false });
 
+function defaultWildPos() { return undefined; }
 function hasWild(ids) {
   const hand = UI.G.seats[UI.viewer].hand;
   return ids.some((id)=>{ const c = hand.find((x)=>x.id===id); return c && E.isWildType(c); });
