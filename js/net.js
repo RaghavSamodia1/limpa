@@ -66,9 +66,13 @@ function join(code, h) {
   let peer = null, conn = null, closed = false, opened = false;
   peer = newPeer();
   const fail = (kind, err) => { if (!closed) h.onError && h.onError(kind, err); };
+  h.onStage && h.onStage('broker');
+  const brokerTimer = setTimeout(() => { if (!peer.open) fail('timeout'); }, 10000);
   peer.on('open', () => {
+    clearTimeout(brokerTimer);
+    h.onStage && h.onStage('dialing');
     conn = peer.connect(idFor(code), { reliable: true, serialization: 'json' });
-    const timer = setTimeout(() => { if (!opened) fail('timeout'); }, 20000);
+    const timer = setTimeout(() => { if (!opened) fail('timeout'); }, 10000);
     conn.on('open', () => { opened = true; clearTimeout(timer); h.onOpen && h.onOpen(); });
     conn.on('data', (m) => { h.onMessage && h.onMessage(m); });
     conn.on('close', () => { clearTimeout(timer); if (!closed) h.onClose && h.onClose(); });
@@ -79,7 +83,7 @@ function join(code, h) {
   return {
     send(msg) { if (conn && conn.open) { try { conn.send(msg); return true; } catch (e) {} } return false; },
     get open() { return !!(conn && conn.open); },
-    close() { closed = true; try { if (conn) conn.close(); } catch (e) {} try { peer.destroy(); } catch (e) {} },
+    close() { closed = true; clearTimeout(brokerTimer); try { if (conn) conn.close(); } catch (e) {} try { peer.destroy(); } catch (e) {} },
   };
 }
 
