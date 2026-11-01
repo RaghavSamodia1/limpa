@@ -408,3 +408,40 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
 #app:not(.ingame) #toast{bottom:calc(20px + env(safe-area-inset-bottom))}
 .level{flex-wrap:wrap;justify-content:center}
 .seg{padding:8px 14px}
+
+/* ---------- staged turns: only what matters for the current step ---------- */
+.game .zonewrap{display:none}
+.game.show-opp .zonewrap.opp,.game.show-own .zonewrap.own{display:flex}
+.game:not(.show-opp):not(.show-own) .plane{justify-content:center}
+.game .mid{transition:none}
+.game.piles-small .history{display:none}
+.game.piles-small .mid{padding-bottom:6px}
+/* big piles: the deck and the pile are the whole point of steps 1 and 3 */
+.game.piles-big .mid{flex-wrap:wrap;gap:calc(var(--mw)*.9);width:calc(var(--appw)*1.1)}
+.game.piles-big .stackwrap,.game.piles-big .topwrap{width:calc(var(--mw)*2.5);height:calc(var(--mh)*2.5)}
+.game.piles-big .stackcard,.game.piles-big .topdis{font-size:calc(var(--mw)*1)}
+.game.piles-big .history{flex:0 0 100%;max-width:100%;justify-content:center;padding:14px 4px 4px}
+.game.piles-big .history .tc{--mw:calc(var(--appw)*.12);--strip:calc(var(--appw)*.055);width:var(--mw);height:calc(var(--mw)*1.4);font-size:calc(var(--mw)*.36);margin-right:calc(var(--strip) - var(--mw))}
+.game.piles-big .dir{display:none}
+.game.stage-draw .fan,.game.stage-throw .fan{opacity:.55}
+/* the guide: one clear instruction at a time */
+.cta{position:absolute;left:0;right:0;top:0;height:var(--guide-h);display:flex;flex-direction:column;justify-content:flex-end;gap:6px;padding:0 10px 6px;pointer-events:none}
+.cta>*{pointer-events:auto}
+.guide{background:rgba(var(--ink-rgb),.94);border:2px solid rgba(255,255,255,.28);border-radius:16px;padding:6px 12px;box-shadow:0 4px 12px rgba(0,0,0,.45);min-height:52px;display:flex;flex-direction:column;justify-content:center}
+.g1{font-size:18px;font-weight:800;line-height:1.15;color:#fff}
+.g2{font-size:15.5px;font-weight:700;line-height:1.2;color:var(--yellow);margin-top:2px}
+.stepno{background:var(--yellow);color:var(--ink);border-radius:9px;padding:0 8px;margin-right:6px;font-size:14px}
+.views{display:flex;gap:6px;justify-content:center}
+.vchip{font-size:14px;font-weight:800;padding:4px 12px;border-radius:999px;background:rgba(var(--ink-rgb),.82);border:2px solid var(--line);color:#fff;transition:transform 120ms var(--ease-out)}
+.vchip.on{background:var(--yellow);color:var(--ink);border-color:#fff}
+.vchip:active{transform:scale(.95)}
+.actions{top:var(--guide-h)}
+.handwrap{top:calc(var(--guide-h) + var(--act-h))}
+.ctl .btn{padding:11px 11px;font-size:16.5px;min-width:84px}
+.btn.help.on{animation:none}
+.hc.hintc{--lift:calc(var(--hh)*-.12)}
+.hc.hintc::before,.meld.hintm::before,.stackcard.hintg::before,.topdis.hintg::before{content:"";position:absolute;inset:-4px;border-radius:inherit;pointer-events:none;box-shadow:0 0 0 3px var(--good),0 0 18px 6px rgba(61,220,151,.75);animation:glowpulse 1s ease-in-out infinite}
+.meld.hintm{position:relative}
+.plane{padding-bottom:calc(46px)}
+.card.joker.topdis .cr,.card.joker.hc .cr{font-size:.4em;letter-spacing:-.05em;left:.2em}
+.game.stage-meld.piles-small .mid{display:none}

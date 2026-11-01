@@ -20,6 +20,11 @@ On a phone, "Add to Home Screen" installs it full-screen with its own icon.
   team mats for melds, the piles and the extra decks on the table, and your own hand fanned at the bottom. Cards fly between piles, hands and melds.
 - **Colour themes.** *Felt* (green card table, default), *Café* (warm walnut) and *Midnight*. Pick one from the main menu or the in-game menu.
 - **Computer players.** *Expert* (default, with lookahead), *Smart* or *Easy* (the original prototype player), chosen in the lobby. See below.
+- **Three steps, one thing at a time.** A turn is shown as Step 1 *Draw*, Step 2 *Make melds*, Step 3 *Throw*. Each step shows only what matters: the deck and the pile in step 1,
+  your team's melds in step 2, the pile in step 3, and both teams' melds while the others play. Three buttons (*Your melds / Their melds / Piles*) look at anything else.
+- **Help.** A 💡 suggestion at every step in plain words ("Add the 7♦ to the glowing run"), with the cards or meld highlighted and a *Do it* button that plays it for you.
+  It is the Smart computer player's choice, asked on your behalf. Suggestions can be switched off.
+- **Less fiddly.** No dragging needed: tap cards, then *Place*, or select cards and tap a meld to add them; tap a card and *Throw*. The hand sorts itself. Optional no-timer mode (solo games) and slow computer players, in the menu under *Comfort*.
 - **Easy to read.** Large type, large buttons, high-contrast table labels, and all melds shown at once: the table tips flatter as it fills up before any card shrinks.
 - **Sound.** Small synthesised effects with a mute toggle. No audio files.
 - **Online rooms.** *Play online with friends* makes a room code like `LB-7KQ2M` plus a share link (system share sheet, WhatsApp, or copy).

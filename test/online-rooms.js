@@ -50,7 +50,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     if (s.phase === 'draw') { await who.dispatchEvent('[data-act=draw]', 'click'); await sleep(700); continue; }
     // try to meld something obvious via the engine's own suggestion, else throw
     const id = await who.evaluate(() => { const U = window.__limpa.UI, E = window.__limpa.E; const g = U.G; return g.seats[g.turn === U.viewer ? U.viewer : 0].hand[0].id; });
-    await who.dispatchEvent(`.hc[data-id="${id}"]`, 'click'); await who.dispatchEvent('[data-act=discard]', 'click');
+    await who.dispatchEvent('[data-act=goThrow]', 'click'); await who.dispatchEvent(`.hc[data-id="${id}"]`, 'click'); await who.dispatchEvent('[data-act=discard]', 'click');
     s.turn === 0 ? hostTurns++ : guestTurns++;
     await sleep(700);
   }
