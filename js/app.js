@@ -74,7 +74,7 @@ const setting = {
 
 const UI = {
   screen:'menu', lobby:null, G:null, viewer:null, cover:null, spinning:false,
-  tilt:TILT0, step:'meld', peek:null, peekStage:null, helpShown:false, hintKey:'', hint:null, sel:new Set(), order:{}, deadline:null, deadlineKey:null, botTimer:null,
+  tilt:TILT0, deckSeen:[null, null], step:'meld', peek:null, peekStage:null, helpShown:false, hintKey:'', hint:null, sel:new Set(), order:{}, deadline:null, deadlineKey:null, botTimer:null,
   modal:null, shake:null, dealing:false, toasts:[], joinMsg:'', M:null,
 };
 
@@ -148,7 +148,7 @@ function startGame() {
   clearTimeout(UI.botTimer); UI.botTimer = null;
   UI.G = E.createGame({ gameId:L.gameId, teamNames:L.teamNames, seats:L.seats.map((s)=>({...s, level:L.level})) });
   UI.screen = 'game'; UI.tilt = TILT0; UI.sel.clear(); UI.order = {}; UI.modal = null; UI.cover = null;
-  UI.deadline = null; UI.deadlineKey = null;
+  UI.deadline = null; UI.deadlineKey = null; resetDeckSeen();
   const hs = humans(); UI.viewer = hs.length ? hs[0] : 0;
   UI.dealing = true; UI.spinning = true;
   render();
@@ -251,6 +251,7 @@ function afterLocal(r, seat, prevTurnNo, actType) {
   Sound.play(actType === 'draw' || actType === 'pickup' || actType === 'timeout' ? 'draw' : actType === 'discard' ? 'throw' : actType === 'newMeld' || actType === 'addToMeld' ? 'place' : '', quiet);
   (r.events || []).forEach((e) => { if (quiet && e.kind === 'info' && /picked up|returned the pile/.test(e.text)) toast(e.text); });
   if (G.phase === 'over') { UI.modal = { type:'results' }; UI.deadline = null; Sound.play(G.result.winner === E.teamOf(UI.viewer) ? 'win' : G.result.winner === null ? 'turn' : 'lose'); render(); return; }
+  checkDeckReminder(r.events);
   if (G.turn !== seat || G.turnNo !== (prevTurnNo || G.turnNo)) onTurnChange();
   else { armTimer(); scheduleBot(); }
   render();
@@ -327,7 +328,7 @@ function createRoom(resume) {
   UI.lobby = L;
   const N = UI.net = { role: 'host', code: L.gameId, status: 'connecting', error: '', peers: {}, last: {}, seq: 0, tokens: resume ? resume.tokens : [null, null, null, null] };
   if (resume && resume.G) {                       // picking a game back up after the page was closed or reloaded
-    UI.G = resume.G; UI.viewer = 0; UI.screen = 'game'; UI.tilt = TILT0; UI.order = {}; UI.sel.clear(); UI.modal = null;
+    UI.G = resume.G; UI.viewer = 0; resetDeckSeen(); UI.screen = 'game'; UI.tilt = TILT0; UI.order = {}; UI.sel.clear(); UI.modal = null;
     UI.G.seats.forEach((st, i) => { if (i > 0 && !st.bot) st.away = Date.now(); });
     UI.deadline = null; UI.deadlineKey = null; UI.dealing = false; UI.spinning = false;
     onTurnChange();
@@ -434,7 +435,7 @@ function startOnlineGame() {
   clearTimeout(UI.botTimer); UI.botTimer = null;
   UI.G = E.createGame({ gameId: L.gameId, teamNames: L.teamNames, seats: L.seats.map((s) => ({ name: s.name, avatar: s.avatar, bot: !!s.bot, level: L.level })) });
   UI.screen = 'game'; UI.tilt = TILT0; UI.sel.clear(); UI.order = {}; UI.modal = null; UI.cover = null; UI.deadline = null; UI.deadlineKey = null;
-  UI.viewer = 0; UI.spinning = false; UI.dealing = true; setTimeout(() => { UI.dealing = false; }, 1600);
+  UI.viewer = 0; UI.spinning = false; UI.dealing = true; setTimeout(() => { UI.dealing = false; }, 1600); resetDeckSeen();
   onTurnChange(); toast(UI.G.seats[UI.G.turn].name + ' starts', 'good');
   render(); publishState({ seat: -1, type: 'start' }, []);
 }
@@ -503,8 +504,8 @@ function applyRemote(m) {
   const prevTurn = UI.G ? UI.G.turnNo : -1, prevPhase = UI.G ? UI.G.phase : null;
   const G = inflate(m.state, me);
   UI.G = G; UI.viewer = me; N.mySeat = me; N.status = 'connected';
-  if (first) { UI.screen = 'game'; UI.tilt = TILT0; UI.sel.clear(); UI.order = {}; UI.modal = null; UI.dealing = true; UI.deadline = null; UI.deadlineKey = null; setTimeout(() => { UI.dealing = false; }, 1600); }
-  else if (prevPhase === 'over' && G.phase !== 'over') { UI.modal = null; UI.sel.clear(); UI.order = {}; UI.dealing = true; UI.tilt = TILT0; UI.deadlineKey = null; setTimeout(() => { UI.dealing = false; }, 1600); }
+  if (first) { resetDeckSeen(); UI.screen = 'game'; UI.tilt = TILT0; UI.sel.clear(); UI.order = {}; UI.modal = null; UI.dealing = true; UI.deadline = null; UI.deadlineKey = null; setTimeout(() => { UI.dealing = false; }, 1600); }
+  else if (prevPhase === 'over' && G.phase !== 'over') { resetDeckSeen(); UI.modal = null; UI.sel.clear(); UI.order = {}; UI.dealing = true; UI.tilt = TILT0; UI.deadlineKey = null; setTimeout(() => { UI.dealing = false; }, 1600); }
   const a = m.actor || null; UI.actor = a;
   (m.events || []).forEach((e) => { if (e.kind === 'good' || e.kind === 'bad' || e.kind === 'warn') toast(e.text, e.kind === 'bad' ? 'err' : 'good'); });
   if (a && a.seat >= 0) {
@@ -513,6 +514,7 @@ function applyRemote(m) {
     (m.events || []).forEach((e) => { if (quiet && e.kind === 'info' && /picked up|returned the pile/.test(e.text)) toast(e.text); });
     if (a.seat === me) { UI.helpShown = false; if (a.type === 'draw' || a.type === 'pickup') { UI.deadline = null; UI.step = 'meld'; } if (a.type === 'pickup') UI.sel = new Set([G.mustUse]); else UI.sel.clear(); }
   }
+  if (!first) checkDeckReminder(m.events);
   if (G.phase === 'over') {
     if (!UI.modal || UI.modal.type !== 'results') { UI.modal = { type: 'results' }; Sound.play(G.result.winner === E.teamOf(me) ? 'win' : G.result.winner === null ? 'turn' : 'lose'); }
     UI.deadline = null; render(); return;
@@ -548,6 +550,17 @@ function shareRoom() {
 }
 function copyText(txt, ok) {
   (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast(ok, 'good')).catch(() => toast(txt));
+}
+
+/* ---------------- extra-deck reminder ----------------
+   When your team's extra deck is claimed, explain what it means once, at that moment. */
+function resetDeckSeen() { const G = UI.G; UI.deckSeen = G ? [G.teams[0].deckStatus, G.teams[1].deckStatus] : [null, null]; }
+function checkDeckReminder(events) {
+  const G = UI.G; if (!G || UI.viewer === null || UI.viewer === undefined) return;
+  const t = E.teamOf(UI.viewer), st = G.teams[t].deckStatus, was = UI.deckSeen[t];
+  UI.deckSeen[t] = st;
+  if (was === 'unclaimed' && st === 'claimed' && G.phase !== 'over' && (!UI.modal || UI.modal.type === 'spin'))
+    UI.modal = { type: 'deckTip', now: (events || []).some((e) => /keeps playing/.test(e.text)) };
 }
 
 /* ---------------- assistance: what to do next, in plain words ----------------
@@ -943,6 +956,8 @@ function renderGame() {
   else if (G.phase === 'over') { g1 = 'Game over'; }
   else if (stage === 'watch') { g1 = who.away ? who.name + ' lost connection' : who.name + (who.bot ? ' is playing…' : "'s turn"); g2 = who.away ? 'Waiting for them to come back.' : 'Watch the table, or look at the melds below.'; }
   else { g1 = `<b class="stepno">${STEP[stage][0]}</b> ${STEP[stage][1]}`; g2 = hintOn ? '💡 ' + H.text : STEP[stage][2]; }
+  // until an extra-deck card has been melded, keep reminding (it also stays visible when a suggestion is shown)
+  const deckNote = stage === 'meld' && G.teams[myTeam].deckStatus === 'claimed' && !G.teams[myTeam].deckUsed;
   const viewNow = UI.peek || 'auto';
   const entering = UI.lastStage !== stage || UI.lastView !== viewNow;
   UI.lastStage = stage; UI.lastView = viewNow;
@@ -1032,7 +1047,7 @@ function renderGame() {
     </div>
     <div class="seats">${seatChip(seatAt(1), 'l')}${seatChip(seatAt(2), 't')}${seatChip(seatAt(3), 'r')}</div>
     <div class="dock">
-      <div class="cta">${views}<div class="guide"><div class="g1">${g1}</div>${g2 ? `<div class="g2">${esc(g2)}</div>` : ''}</div></div>
+      <div class="cta">${views}<div class="guide"><div class="g1">${g1}</div>${g2 ? `<div class="g2">${esc(g2)}</div>` : ''}${deckNote ? '<div class="g3">🟠 Meld at least one orange-dot card (extra deck).</div>' : ''}</div></div>
       <div class="actions">${meBlock}${ctl}</div>
       <div class="handwrap">${handHTML}</div>
     </div>
@@ -1125,6 +1140,14 @@ function renderModal() {
         <button class="btn red sm" data-act="quit">Quit</button>
         <button class="btn sm" data-act="close">Resume</button>
       </div></div></div>`;
+  }
+  if (M.type === 'deckTip') {
+    return `<div class="ov"><div class="modal" style="text-align:center">
+      <h2>Extra deck claimed 🎉</h2>
+      <p>${M.now ? 'Your team\'s 11 extra cards are now in your hand, marked with an <b style="color:var(--orange)">orange dot</b>. Keep playing this turn.' : 'Your team\'s 11 extra cards are in your hand, marked with an <b style="color:var(--orange)">orange dot</b>. You can play them from your next turn.'}</p>
+      <p style="text-align:left;margin:6px 0 0">Remember:<br>• Meld <b>at least one</b> orange-dot card, or your team loses <b>100 points</b>.<br>• To go out you need that, plus <b>2 finished melds</b>, one of them pure.</p>
+      <div class="bigrow"><button class="btn" data-act="close">Got it</button></div>
+    </div></div>`;
   }
   if (M.type === 'meld') {
     const m = [...G.teams[0].melds, ...G.teams[1].melds].find((x)=>x.id===M.meldId);
