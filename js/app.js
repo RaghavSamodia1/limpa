@@ -457,12 +457,19 @@ function guestConnect() {
   const N = UI.net; if (!isGuest()) return;
   if (N.tr) { try { N.tr.close(); } catch (e) {} }
   N.tr = LimpaNet.join(N.code, {
-    onOpen() { const pf = profile(); N.lastMsg = Date.now(); N.tr.send({ t: 'hello', name: pf.name, avatar: pf.avatar, token: N.token }); },
+    onStage(st) { if (N === UI.net && !N.joined) { N.stage = st; if (UI.screen === 'room') render(); } },
+    onOpen() {
+      const pf = profile(); N.lastMsg = Date.now(); N.stage = 'hello'; if (UI.screen === 'room' && !N.joined) render();
+      const tr = N.tr, stamp = N.lastMsg;
+      const hello = () => { if (N === UI.net && N.tr === tr && tr.open && N.lastMsg === stamp) { tr.send({ t: 'hello', name: pf.name, avatar: pf.avatar, token: N.token }); setTimeout(hello, 4000); } };
+      hello();
+    },
     onMessage: guestMessage,
     onClose() { if (N === UI.net) guestLost(); },
     onError(kind) {
       if (N !== UI.net) return;
       if (N.joined) { guestLost(); return; }
+      if (kind === 'timeout' && (N.first = (N.first || 0) + 1) < 3) { N.stage = 'retry'; render(); setTimeout(() => { if (N === UI.net && !N.joined) guestConnect(); }, 300); return; }
       leaveRoom(kind === 'not-found' ? 'No room found with that code. Check the code, or ask the host to share it again.' : "Couldn't connect to the room. Check your internet connection and try again.", true);
     },
   });
@@ -837,7 +844,7 @@ function renderRoom() {
   const stText = N.status === 'ready' || N.status === 'connected' ? '● Room open' : N.status === 'lost' ? 'Reconnecting…' : N.status === 'error' ? 'Not connected' : 'Connecting…';
   const stCls = N.status === 'ready' || N.status === 'connected' ? 'ok' : N.status === 'error' || N.status === 'lost' ? 'bad' : '';
   const head = `<div class="codebox"><small>ROOM CODE</small><b>${esc(N.code)}</b><span class="st ${stCls}">${stText}</span></div>`;
-  if (!L) return `<div class="screen room-screen"><div class="room"></div>${head}<div class="muted" style="font-size:15px">Joining…</div><button class="btn ghost sm" data-act="leaveRoom">← Cancel</button></div>`;
+  if (!L) return `<div class="screen room-screen"><div class="room"></div>${head}<div class="muted" style="font-size:15px">${esc({ broker: 'Reaching the matchmaking server…', dialing: 'Finding the host…', hello: 'Found the host, joining…', retry: 'Slow connection, trying again…' }[N.stage] || 'Joining…')}</div><button class="btn ghost sm" data-act="leaveRoom">← Cancel</button></div>`;
   const seatRow = (i) => {
     const sp = L.seats[i], mine = i === (host ? 0 : N.mySeat);
     let right = '', left = `<span class="ava">${esc(sp.avatar)}</span><span class="rname">${esc(sp.name)}${mine ? ' <i class="you">you</i>' : ''}</span>`;
