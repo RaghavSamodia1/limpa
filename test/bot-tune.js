@@ -1,36 +1,38 @@
-// Self-play tuning of the smart computer player's weights (coordinate descent).
-// A challenger (one weight changed) must beat the current champion over N games to replace it.
-// usage: node test/bot-tune.js [games-per-trial] [passes] [out.json]
+// Tunes the Smart/Expert computer player's weights by self-play (parallel random search).
+// Each trial changes several weights at once; the challenger must beat the current champion over N games to replace it.
+//   node test/bot-tune.js [games-per-trial=4000] [trials=60] [champion.json]
 'use strict';
 const fs = require('fs');
 const E = require('../js/engine.js');
-const { arena } = require('./bot-arena.js');
-const N = +process.argv[2] || 500, PASSES = +process.argv[3] || 2, OUT = process.argv[4] || 'champion.json';
-
+const { evalPair } = require('./bot-eval.js');
+const N = +process.argv[2] || 4000, TRIALS = +process.argv[3] || 60, OUT = process.argv[4] || 'champion.json';
 let champ = fs.existsSync(OUT) ? JSON.parse(fs.readFileSync(OUT, 'utf8')) : {};
-const base = () => Object.assign({}, E.CFG.smart, champ);
+const cur = () => Object.assign({}, E.CFG.smart, champ);
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-const variants = {
-  allSets: () => [0], wildNew: () => [0], wildAdd: () => [0], danger: () => [0], spendWild: () => [0], goOutCheck: () => [0],
-  wildNewHand: (v) => [v - 3, v + 3], wildNewU: (v) => [clamp(v - .3, 0, 1), clamp(v + .3, 0, 2)],
-  wildAddLen: (v) => [v - 1, v + 1], wildAddU: (v) => [clamp(v - .25, 0, 1), clamp(v + .25, 0, 1)], wildAddAny: (v) => [clamp(v - .3, 0, 1), clamp(v + .25, 0, 2)],
-  dangerW: (v) => [v * .5, v * 1.7], wildKeep: (v) => [v * .5, v * 1.5], wildBase: (v) => [v * .4, v * 2], sameRankW: (v) => [v * .5, v * 1.6],
-  adjW: (v) => [v * .5, v * 1.6], gapW: (v) => [v * .4, v * 1.8], fitW: (v) => [v * .5, v * 1.6],
-  addBase: (v) => [v * .6, v * 1.5], addLenW: (v) => [v * .4, v * 1.8], newBase: (v) => [v * .6, v * 1.5], newLenW: (v) => [v * .5, v * 1.7],
-  wildNewBase: (v) => [v * .5, v * 1.8], completeW: (v) => [v * .5, v * 1.6], pureW: (v) => [v * .4, v * 1.8], pickTier: () => [5, 6, 8],
+const NUM = {   // name: [min, max]
+  wildNewHand: [4, 13], wildNewU: [0, 1], wildAddLen: [2, 6], wildAddU: [.1, .9], wildAddAny: [.4, 1],
+  dangerW: [0, 70], wildKeep: [20, 140], wildBase: [0, 50], sameRankW: [0, 30], adjW: [0, 35], gapW: [0, 25], fitW: [10, 120],
+  addBase: [20, 90], addLenW: [0, 15], newBase: [30, 100], newLenW: [0, 25], wildNewBase: [0, 70], completeW: [20, 160], pureW: [0, 160],
+  midSetU: [.5, 1], midSetHand: [0, 8], outsW: [0, 14], setOutsW: [0, 12], dangerGapW: [0, 30], waitLive: [1, 4], waitU: [.2, 1],
 };
+const INT = new Set(['wildNewHand', 'wildAddLen', 'midSetHand', 'waitLive']);
+const names = Object.keys(NUM);
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
-for (let pass = 1; pass <= PASSES; pass++) {
-  for (const key of Object.keys(variants)) {
-    const cur = base()[key];
-    for (const val of variants[key](cur)) {
-      if (val === cur) continue;
-      const chal = Object.assign({}, champ, { [key]: val });
-      const st = arena(N, 'smart', 'smart', chal, champ);       // A = challenger, B = champion
-      const w = st.A.win, l = st.B.win, rate = w / Math.max(1, w + l);
-      log(`pass ${pass}  ${key}: ${cur} -> ${val}   ${w}-${l} (${(100 * rate).toFixed(1)}%)${rate >= .55 ? '  ACCEPT' : ''}`);
-      if (rate >= .55) { champ = chal; fs.writeFileSync(OUT, JSON.stringify(champ, null, 1)); break; }
+(async () => {
+  for (let t = 1; t <= TRIALS; t++) {
+    const chal = Object.assign({}, champ), c0 = cur(), changed = [];
+    const k = 3 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < k; i++) {
+      const n = names[Math.floor(Math.random() * names.length)], [lo, hi] = NUM[n];
+      let v = c0[n] * (Math.random() < .5 ? 1 / (1 + Math.random() * .6) : 1 + Math.random() * .6);
+      if (!c0[n]) v = lo + Math.random() * (hi - lo) * .3;
+      v = clamp(v, lo, hi); if (INT.has(n)) v = Math.round(v);
+      chal[n] = +v.toFixed(3); changed.push(`${n} ${c0[n]}→${chal[n]}`);
     }
+    const r = await evalPair(N, 'smart', 'smart', chal, champ);
+    const ok = r.rate >= .525;
+    log(`trial ${t}/${TRIALS}  ${(100 * r.rate).toFixed(1)}%  ${ok ? 'ACCEPT ' : ''}${changed.join(', ')}`);
+    if (ok) { champ = chal; fs.writeFileSync(OUT, JSON.stringify(champ, null, 1)); }
   }
-}
-log('champion', JSON.stringify(champ));
+  log('champion', JSON.stringify(champ));
+})();
