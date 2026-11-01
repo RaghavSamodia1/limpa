@@ -636,7 +636,7 @@ function metrics(n, showHand) {
   const per = Math.ceil(Math.max(1, n) / rows);
   const step = per > 1 ? Math.min(maxStep, avail / (per - 1)) : 0;
   const rowStep = hh * .5, R = hh * 4.5;
-  const actH = 56, guideH = 96, safeB = inset('bottom'), safeT = inset('top');
+  const actH = 50, guideH = 84, safeB = inset('bottom'), safeT = inset('top');
   const handH = (showHand ? hh * .95 + (rows - 1) * rowStep : hh * .62) + safeB;
   const dockH = guideH + actH + handH;
   const c = Math.cos(UI.tilt * Math.PI / 180), s = Math.sin(UI.tilt * Math.PI / 180);
@@ -944,6 +944,8 @@ function renderGame() {
   else if (stage === 'watch') { g1 = who.away ? who.name + ' lost connection' : who.name + (who.bot ? ' is playing…' : "'s turn"); g2 = who.away ? 'Waiting for them to come back.' : 'Watch the table, or look at the melds below.'; }
   else { g1 = `<b class="stepno">${STEP[stage][0]}</b> ${STEP[stage][1]}`; g2 = hintOn ? '💡 ' + H.text : STEP[stage][2]; }
   const viewNow = UI.peek || 'auto';
+  const entering = UI.lastStage !== stage || UI.lastView !== viewNow;
+  UI.lastStage = stage; UI.lastView = viewNow;
   const showOwn = stage === 'meld' ? viewNow !== 'opp' && viewNow !== 'piles' : stage === 'watch' ? viewNow !== 'opp' && viewNow !== 'piles' : viewNow === 'mine';
   const showOpp = stage === 'watch' ? viewNow !== 'mine' && viewNow !== 'piles' : viewNow === 'opp';
   const pilesBig = (stage === 'draw' || stage === 'throw') ? viewNow !== 'mine' && viewNow !== 'opp' : viewNow === 'piles';
@@ -972,15 +974,16 @@ function renderGame() {
   const thrower = selCards.length === 1 ? E.cardName(selCards[0]) : '';
   const helpBtn = `<button class="btn ghost help ${hintOn ? 'on' : ''}" data-act="help" ${H ? '' : 'disabled'} aria-label="${hintOn ? 'Do the suggested move for me' : 'Show me what to do'}">${hintOn ? 'Do it ✓' : '💡 Help'}</button>`;
   let ctl = '';
-  if (stage === 'draw') ctl = `<span class="ctl">
-      ${G.finalTurn && !G.stack.length ? `<button class="btn red" data-act="endGame">End game</button>` : `<button class="btn green" data-act="draw" ${canDraw ? '' : 'disabled'}>Draw card</button>`}
-      <button class="btn" data-act="pickup" ${canPick ? '' : 'disabled'}>Take pile</button>${helpBtn}</span>`;
-  else if (stage === 'meld') ctl = `<span class="ctl">
-      ${returnBtn ? `<button class="btn ghost" data-act="returnPile" aria-label="Return the pile and draw instead">↩ Return</button>` : helpBtn}
-      <button class="btn ${newValid ? 'green place' : ''}" data-act="newMeld" id="newBtn" ${on && selCards.length >= 3 ? '' : 'disabled'}>${newValid ? 'Place ✓' : 'New meld'}</button>
-      ${returnBtn ? helpBtn : `<button class="btn red" data-act="goThrow">Throw ›</button>`}</span>`;
-  else if (stage === 'throw') ctl = `<span class="ctl">
-      <button class="btn ghost" data-act="goMeld">‹ Melds</button>${helpBtn}
+  if (stage === 'draw') ctl = `<span class="ctl">${helpBtn}
+      <button class="btn" data-act="pickup" ${canPick ? '' : 'disabled'}>Take pile</button>
+      ${G.finalTurn && !G.stack.length ? `<button class="btn red" data-act="endGame">End game</button>` : `<button class="btn green" data-act="draw" ${canDraw ? '' : 'disabled'}>Draw card</button>`}</span>`;
+  else if (stage === 'meld') ctl = `<span class="ctl">${helpBtn}
+      ${returnBtn ? `<button class="btn" data-act="returnPile" aria-label="Return the pile and draw instead">↩ Return</button>
+        <button class="btn ${newValid ? 'green place' : ''}" data-act="newMeld" id="newBtn" ${on && selCards.length >= 3 ? '' : 'disabled'}>${newValid ? 'Place ✓' : 'New meld'}</button>`
+      : `<button class="btn ${newValid ? 'green place' : ''}" data-act="newMeld" id="newBtn" ${on && selCards.length >= 3 ? '' : 'disabled'}>${newValid ? 'Place ✓' : 'New meld'}</button>
+        <button class="btn red" data-act="goThrow">Throw ›</button>`}</span>`;
+  else if (stage === 'throw') ctl = `<span class="ctl">${helpBtn}
+      <button class="btn" data-act="goMeld">‹ Melds</button>
       ${endBtn ? `<button class="btn red" data-act="endGame">End game</button>` : `<button class="btn red" data-act="discard" id="throwBtn" ${selCards.length === 1 && !G.finalTurn ? '' : 'disabled'}>${thrower ? 'Throw ' + esc(thrower) : 'Throw'}</button>`}</span>`;
   else ctl = '<span class="ctl"></span>';
 
@@ -1013,7 +1016,7 @@ function renderGame() {
     handHTML = `<div class="hand"><div class="hidden"><div class="back"></div><span>Hand hidden while others play</span></div></div>`;
   }
 
-  return `<div class="game stage-${stage} ${showOwn ? 'show-own' : ''} ${showOpp ? 'show-opp' : ''} ${pilesBig ? 'piles-big' : 'piles-small'}">
+  return `<div class="game stage-${stage} ${entering ? 'enter' : ''} ${showOwn ? 'show-own' : ''} ${showOpp ? 'show-opp' : ''} ${pilesBig ? 'piles-big' : 'piles-small'}">
     <div class="room"></div>
     <div class="stage"><div class="plane" id="plane">
       <div class="tablefill"></div>
@@ -1122,16 +1125,6 @@ function renderModal() {
         <button class="btn red sm" data-act="quit">Quit</button>
         <button class="btn sm" data-act="close">Resume</button>
       </div></div></div>`;
-  }
-  if (M.type === 'wildpick') {
-    return `<div class="ov"><div class="modal">
-      <h2>Where should the wildcard go?</h2>
-      <p class="muted">These cards can form the sequence more than one way. Pick the layout you want.</p>
-      <div class="optrow">${M.opts.map((o,i)=>`<button type="button" class="opt" data-act="pickWild" data-i="${i}">
-        <span class="cards">${o.cards.map((x)=>{ const w = !E.isNaturalAt(x.c,x.r,o.suit); return cardHTML(x.c,'tc'+(w?' wild':''),'', w?`<span class="rep">=${E.rankTxt(x.r)}</span>`:''); }).join('')}</span>
-        <span><b>${esc(o.label)}</b><br><span class="muted" style="font-size:12px">${o.pure?'Pure':'Impure'}</span></span></button>`).join('')}</div>
-      <div style="text-align:right;margin-top:10px"><button class="btn ghost" data-act="close">Cancel</button></div>
-    </div></div>`;
   }
   if (M.type === 'meld') {
     const m = [...G.teams[0].melds, ...G.teams[1].melds].find((x)=>x.id===M.meldId);
@@ -1276,19 +1269,8 @@ app.addEventListener('click', (e) => {
     case 'pickup': act({ type:'pickup' }); break;
     case 'returnPile': act({ type:'returnPile' }); break;
     case 'endGame': act({ type:'endGame' }); break;
-    case 'newMeld': {
-      const ids = [...UI.sel];
-      const cards = ids.map((id)=>G.seats[UI.viewer].hand.find((c)=>c.id===id)).filter(Boolean);
-      const sets = G.teams[E.teamOf(UI.viewer)].melds.filter((m)=>m.type==='set').length;
-      const opts = E.newMeldOptions(cards, sets);
-      if (opts.length > 1) { UI.modal = { type:'wildpick', ids, opts }; render(); break; }
-      const r = act({ type:'newMeld', cardIds: ids, choice: opts[0] && opts[0].sig });
-      if (!r.ok) { UI.shake = '#newBtn'; render(); }
-      break;
-    }
-    case 'pickWild': {
-      const M = UI.modal; const o = M.opts[+el.dataset.i]; UI.modal = null;
-      const r = act({ type:'newMeld', cardIds: M.ids, choice: o.sig });
+    case 'newMeld': {                       // wildcards are placed automatically (no question asked)
+      const r = act({ type:'newMeld', cardIds: [...UI.sel] });
       if (!r.ok) { UI.shake = '#newBtn'; render(); }
       break;
     }

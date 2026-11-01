@@ -24,6 +24,7 @@ On a phone, "Add to Home Screen" installs it full-screen with its own icon.
   your team's melds in step 2, the pile in step 3, and both teams' melds while the others play. Three buttons (*Your melds / Their melds / Piles*) look at anything else.
 - **Help.** A 💡 suggestion at every step in plain words ("Add the 7♦ to the glowing run"), with the cards or meld highlighted and a *Do it* button that plays it for you.
   It is the Smart computer player's choice, asked on your behalf. Suggestions can be switched off.
+- **No questions about wildcards.** A Joker or 2 is placed automatically. Drag it to an exact spot on a meld if you want to choose.
 - **Less fiddly.** No dragging needed: tap cards, then *Place*, or select cards and tap a meld to add them; tap a card and *Throw*. The hand sorts itself. Optional no-timer mode (solo games) and slow computer players, in the menu under *Comfort*.
 - **Easy to read.** Large type, large buttons, high-contrast table labels, and all melds shown at once: the table tips flatter as it fills up before any card shrinks.
 - **Sound.** Small synthesised effects with a mute toggle. No audio files.
@@ -81,6 +82,7 @@ The weights are plain numbers in `CFG.smart`; a seat can override any of them wi
 | `js/net.js`, `js/vendor/peerjs.min.js` | Online rooms: peer-to-peer transport and the PeerJS library |
 | `js/engine.js` | Rules engine and computer players |
 | `docs/RULES.md` | The rules the engine enforces (v2.0, 2v2) |
+| `docs/UX-AUDIT.md` | Usability audit: findings and what was fixed |
 | `legacy/limpa-2d-prototype.html` | The original single-file 2D prototype, for reference |
 | `test/engine-smoke.js` | Plays 200 computer-only games (both levels) and checks cards are conserved and every game ends |
 | `test/online-rooms.js` | Two-phone online test against the real broker (needs Playwright and internet) |
