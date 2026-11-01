@@ -7,6 +7,7 @@
 const E = window.LimpaEngine;
 const AVATARS = ['🥞','🍳','☕','🥐','🧇','🍩','🥟','🍪','🫖','🍯'];
 const BOT_NAMES = ['Arjun','Meera','Kabir','Zoya','Ishaan','Tara'];
+const LEVELS = ['easy', 'smart', 'expert'], LEVEL_NAME = { easy: 'Easy', smart: 'Smart', expert: 'Expert' };
 const SUIT_ORDER = { S:0, H:1, D:2, C:3, J:4 };
 const app = document.getElementById('app');
 
@@ -125,7 +126,7 @@ function drawToasts() {
 /* ---------------- lobby & game flow ---------------- */
 function newLobby() {
   return {
-    gameId: genId(), teamNames: ['Bhujia','Kachori'], level: store.get('level') === 'easy' ? 'easy' : 'smart',
+    gameId: genId(), teamNames: ['Bhujia','Kachori'], level: (['easy', 'smart', 'expert'].includes(store.get('level')) ? store.get('level') : 'expert'),
     seats: [
       { name:'You', avatar:'🥞', bot:false },
       { name:BOT_NAMES[0], avatar:'🍳', bot:true },
@@ -306,7 +307,7 @@ function createRoom(resume) {
   if (!window.LimpaNet || !LimpaNet.available()) { toast('Online rooms could not load. Reload the page and try again.', 'err'); return; }
   const pf = profile();
   const L = resume ? resume.lobby : {
-    gameId: genId(), teamNames: ['Bhujia', 'Kachori'], level: store.get('level') === 'easy' ? 'easy' : 'smart',
+    gameId: genId(), teamNames: ['Bhujia', 'Kachori'], level: (['easy', 'smart', 'expert'].includes(store.get('level')) ? store.get('level') : 'expert'),
     seats: [
       { name: pf.name, avatar: pf.avatar, bot: false, joined: true },
       { name: BOT_NAMES[0], avatar: '🍳', bot: true },
@@ -786,7 +787,7 @@ function renderRoom() {
       <button class="btn sm ghost" data-act="copyLink">Copy link</button></div>`;
   let foot;
   if (host) foot = `${N.status === 'error' ? `<div class="joinmsg">${esc(N.error)}</div><button class="btn red" data-act="roomRetry">Try again</button>` : ''}
-      <div class="level" role="group" aria-label="Computer skill"><span>Computer players</span>${['easy', 'smart'].map((v) => `<button class="seg ${L.level === v ? 'on' : ''}" data-act="level" data-level="${v}" aria-pressed="${L.level === v}">${v === 'easy' ? 'Easy' : 'Smart'}</button>`).join('')}</div>
+      <div class="level" role="group" aria-label="Computer skill"><span>Computer players</span>${LEVELS.map((v) => `<button class="seg ${L.level === v ? 'on' : ''}" data-act="level" data-level="${v}" aria-pressed="${L.level === v}">${LEVEL_NAME[v]}</button>`).join('')}</div>
       <button class="btn" data-act="startRoom" style="font-size:20px;padding:12px 40px" ${waiting || N.status === 'error' ? 'disabled' : ''}>▶ ${waiting ? 'Waiting for ' + waiting + ' more' : 'Start game'}</button>
       <button class="btn ghost sm" data-act="leaveRoom">Close room</button>`;
   else foot = `<div class="muted" style="font-size:16px;font-weight:700;text-align:center">Waiting for the host to start…</div><button class="btn ghost sm" data-act="leaveRoom">Leave room</button>`;
@@ -809,7 +810,7 @@ function renderLobby() {
       <button class="btn ghost sm" data-act="copy">📋 Copy</button></div>
     ${team(0)}${team(1)}
     <div class="level" role="group" aria-label="Computer skill"><span>Computer players</span>
-      ${['easy','smart'].map((v) => `<button class="seg ${L.level === v ? 'on' : ''}" data-act="level" data-level="${v}" aria-pressed="${L.level === v}">${v === 'easy' ? 'Easy' : 'Smart'}</button>`).join('')}</div>
+      ${LEVELS.map((v) => `<button class="seg ${L.level === v ? 'on' : ''}" data-act="level" data-level="${v}" aria-pressed="${L.level === v}">${LEVEL_NAME[v]}</button>`).join('')}</div>
     <div class="muted" style="font-size:11px;text-align:center">Seats alternate ${esc(L.teamNames[0])} → ${esc(L.teamNames[1])}. Teammates sit opposite each other. If you make more than one seat Human, you pass the phone between turns.</div>
     <button class="btn" data-act="play" ${ready?'':'disabled'} style="font-size:20px;padding:12px 40px">▶ Play</button>
     <button class="btn ghost sm" data-act="home">← Back</button>

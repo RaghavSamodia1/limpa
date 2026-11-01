@@ -19,7 +19,7 @@ On a phone, "Add to Home Screen" installs it full-screen with its own icon.
 - **3D table.** A tilted table in real perspective, the other players' hands fanned face-down on it (with their real card counts),
   team mats for melds, the piles and the extra decks on the table, and your own hand fanned at the bottom. Cards fly between piles, hands and melds.
 - **Colour themes.** *Felt* (green card table, default), *Café* (warm walnut) and *Midnight*. Pick one from the main menu or the in-game menu.
-- **Computer players.** *Smart* (default) or *Easy* (the original prototype player), chosen in the lobby. See below.
+- **Computer players.** *Expert* (default, with lookahead), *Smart* or *Easy* (the original prototype player), chosen in the lobby. See below.
 - **Easy to read.** Large type, large buttons, high-contrast table labels, and all melds shown at once: the table tips flatter as it fills up before any card shrinks.
 - **Sound.** Small synthesised effects with a mute toggle. No audio files.
 - **Online rooms.** *Play online with friends* makes a room code like `LB-7KQ2M` plus a share link (system share sheet, WhatsApp, or copy).
@@ -44,15 +44,27 @@ decks are blank on a guest's phone). The free public PeerJS broker only introduc
 
 ## The computer players
 
-`js/engine.js` holds the rules and both computer players. The **rules are unchanged** from the 2D prototype (`legacy/limpa-2d-prototype.html`); only the computer-player
-section differs, and the original player is kept as the *Easy* level.
+`js/engine.js` holds the rules and the computer players. The **rules are unchanged** from the 2D prototype (`legacy/limpa-2d-prototype.html`); only the computer-player
+section differs. There are three levels, chosen in the lobby (Expert is the default):
 
-The *Smart* player uses wildcards instead of hoarding them, starts melds from any rank (and from two cards plus a wildcard), claims and uses its team's extra deck,
-avoids throwing cards the other team can build on, throws what it can no longer use, and will not go out if that would lose the game.
-Its weights are plain numbers in `CFG.smart` and can be overridden per seat.
+- **Easy** is the original prototype player, unchanged.
+- **Smart** plays the way strong players do. Sets only from edge ranks (A, K, Q, J, 3, 4), never 777 or 888 until the game is nearly over, because those cards are needed for sequences.
+  It counts cards (there are two decks, so it knows which cards are still out there), keeps a wildcard back while the natural card that would finish a pure meld is still likely to arrive,
+  avoids throwing cards the other team can build on (including one gap away from the end of their run), claims and uses its extra deck, and will not go out if that would lose the game.
+- **Expert** is Smart plus lookahead. For each card it might throw, it deals out everything it cannot see (the stack, the other hands, the extra decks) in many plausible ways,
+  plays each game out to the end, and throws the card that wins most often. It thinks for about 0.3 seconds per throw; a faster phone simply tries more deals.
 
-Measured in `test/bot-arena.js` (1,000 games, sides swapped every game): **Smart beats Easy 63% to 29%** (8% draws), goes out three times as often,
-and takes an extra-deck penalty in 0.12 games out of 1 (Easy: 0.65). Smart is also the stronger of the two in self-play tuning, where single-weight changes did not beat it.
+Measured with `node test/bot-eval.js` (sides swapped every game; "decisive" ignores draws):
+
+| Match | Result |
+|---|---|
+| Smart vs Easy (2,000 games) | 64.8% to 28.1%, 69.7% of decided games |
+| Smart vs the previous Smart (2,400 games) | 60.5% of decided games |
+| Expert vs Smart (400 games) | 60.7% of decided games, average margin +66 points |
+
+Switching features off one at a time showed that edge-only sets are worth about 5.5 points of win rate and keeping wildcards for pure melds about 4.
+A learned value-function player (trained by self-play on 450,000 positions) was also tried and played worse than the hand-built rules, so it was dropped.
+The weights are plain numbers in `CFG.smart`; a seat can override any of them with `seat.params`, and `node test/bot-tune.js` searches for better ones.
 
 ## Repo layout
 
@@ -67,9 +79,9 @@ and takes an extra-deck penalty in 0.12 games out of 1 (Easy: 0.65). Smart is al
 | `legacy/limpa-2d-prototype.html` | The original single-file 2D prototype, for reference |
 | `test/engine-smoke.js` | Plays 200 computer-only games (both levels) and checks cards are conserved and every game ends |
 | `test/online-rooms.js` | Two-phone online test against the real broker (needs Playwright and internet) |
-| `test/bot-arena.js`, `test/bot-tune.js` | Head-to-head games between computer levels or weight sets; self-play tuning |
+| `test/bot-eval.js`, `test/bot-tune.js` | Parallel head-to-head games between computer levels or weight sets; self-play tuning |
 
-`npm test` runs the smoke test; `npm run arena` runs the arena.
+`npm test` runs the smoke test; `npm run arena` runs a Smart-vs-Easy comparison.
 
 ## How the 3D works
 
