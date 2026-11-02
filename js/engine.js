@@ -768,11 +768,11 @@
   CFG.smart = {
     allSets: 0, wildNew: 1, wildAdd: 1, danger: 1, spendWild: 1, goOutCheck: 1,
     wildNewHand: 8, wildNewU: .3, wildAddLen: 4, wildAddU: .35, wildAddAny: .7,
-    dangerW: 30, wildKeep: 70, wildBase: 15, sameRankW: 12, adjW: 14, gapW: 8, fitW: 60,
+    dangerW: 30, wildKeep: 70, wildBase: 15, sameRankW: 12, adjW: 26, gapW: 15, fitW: 60,
     addBase: 50, addLenW: 6, newBase: 60, newLenW: 12, wildNewBase: 28, completeW: 90, pureW: 80, pickTier: 6,
     // expert play: sets only from edge ranks (A K Q J 3 4) until the game is nearly over, card counting for outs,
     // and keeping a wildcard back while the natural card that would finish a pure meld is still likely to come
-    rollouts: 0, rollMs: 0, rollCands: 4, expertMs: 300, setMode: 1, midSetU: .85, midSetHand: 3, setKeepRuns: 1, outsW: 5, setOutsW: 4, dangerGapW: 10, waitLive: 2, waitU: .55,
+    pureFirst: 1, pureU: .95, pureNewU: .6, pureLive: 1, finish: 1, outMaxHand: 9, outBudget: 400, outBranch: 7, outDepth: 5, rollouts: 0, rollMs: 0, rollCands: 4, expertMs: 300, setMode: 1, midSetU: .85, midSetHand: 3, setKeepRuns: 1, outsW: 9, setOutsW: 4, dangerGapW: 10, waitLive: 2, waitU: .55,
   };
   const smartParams = (state, seat) => {
     const P = Object.assign({}, CFG.smart, state.seats[seat].params || null);
@@ -875,6 +875,11 @@
           const finishing = len + 1 >= CFG.completeAt && !isComplete(m);
           if (isComplete(m)) continue;                            // would turn a scored pure meld impure for nothing
           if (!(finishing || (len >= P.wildAddLen && u > P.wildAddU) || u > P.wildAddAny)) continue;
+          if (m.type === 'seq' && P.pureFirst && u < P.pureU && completedInfo(T).pure === 0) {     // the team needs one pure meld to go out: protect it
+            const rs0 = m.slots.map((x) => x.r), hi0 = Math.max(...rs0), lo0 = Math.min(...rs0);
+            const live0 = (hi0 < 14 ? unseen(seen, m.suit, hi0 === 13 ? 1 : hi0 + 1) : 0) + (lo0 > 1 ? unseen(seen, m.suit, lo0 - 1) : 0);
+            if (live0 >= P.pureLive) continue;
+          }
           if (m.type === 'seq' && u < P.waitU) {                  // a pure meld is worth double: wait while the natural card is still likely to come
             const rs = m.slots.map((x) => x.r), hi = Math.max(...rs), lo = Math.min(...rs);
             const live = (hi < 14 ? unseen(seen, m.suit, hi === 13 ? 1 : hi + 1) : 0) + (lo > 1 ? unseen(seen, m.suit, lo - 1) : 0);
@@ -890,7 +895,8 @@
       if (!checkNewMeld(g, sets).ok) continue;
       moves.push({ score: P.newBase + g.length * P.newLenW, act: { type: 'newMeld', cardIds: g.map((c) => c.id) } });
     }
-    if (P.wildNew && handHasWild && (hand.length >= P.wildNewHand || u > P.wildNewU || T.deckStatus === 'unclaimed' && hand.length <= 5)) {
+    const needPure = P.pureFirst && completedInfo(T).pure === 0 && u < P.pureNewU;
+    if (P.wildNew && !needPure && handHasWild && (hand.length >= P.wildNewHand || u > P.wildNewU || T.deckStatus === 'unclaimed' && hand.length <= 5)) {
       for (const g of findWildMelds(hand, sets, P, late)) moves.push({ score: P.wildNewBase + g.length * 10, act: { type: 'newMeld', cardIds: g.map((c) => c.id) } });
     }
     moves.sort((a, b) => b.score - a.score);
@@ -989,12 +995,55 @@
     return { type: 'draw' };
   }
 
+  /* Finish drive: when the team is able to go out, look for a run of melds this turn that empties the hand
+     (wildcards may be spent freely for it). Small depth-first search on copies of the game. */
+  function findGoOut(state, seat, P) {
+    const team = teamOf(seat), me = state.seats[seat];
+    if (me.hand.length > P.outMaxHand) return null;
+    const t = state.teams[team];
+    if (t.deckStatus === 'forfeited') return null;
+    let budget = P.outBudget;
+    const cands = (st) => {
+      const hand = st.seats[seat].hand, T = st.teams[team], sets = T.melds.filter((m) => m.type === 'set').length, out = [];
+      for (const m of T.melds) for (const c of hand) {
+        const v = checkAdd(m, [c]); if (v.ok) out.push({ type: 'addToMeld', meldId: m.id, cardIds: [c.id], confirmImpure: true });
+      }
+      for (const g of findNewMeldsAll(hand, sets, P, true)) if (checkNewMeld(g, sets).ok) out.push({ type: 'newMeld', cardIds: g.map((c) => c.id) });
+      for (const g of findWildMelds(hand, sets, P, true)) out.push({ type: 'newMeld', cardIds: g.map((c) => c.id) });
+      return out;
+    };
+    const rec = (st, depth) => {
+      if (budget-- <= 0) return null;
+      const hand = st.seats[seat].hand;
+      if (hand.length === 1) {                                           // throwing the last card ends it too
+        const s2 = clone(st);
+        if (apply(s2, seat, { type: 'discard', cardId: hand[0].id }).ok && s2.phase === 'over' && s2.result && s2.result.reason === 'out' && s2.result.winner === team) return [{ type: 'discard', cardId: hand[0].id }];
+      }
+      if (depth <= 0 || !hand.length) return null;
+      const list = cands(st).sort((a, b) => b.cardIds.length - a.cardIds.length).slice(0, P.outBranch);
+      for (const act of list) {
+        const s2 = clone(st), r = apply(s2, seat, act);
+        if (!r.ok) continue;
+        if (s2.phase === 'over') { if (s2.result && s2.result.reason === 'out' && s2.result.winner === team) return [act]; continue; }
+        const rest = rec(s2, depth - 1);
+        if (rest) return [act].concat(rest);
+      }
+      return null;
+    };
+    return rec(state, P.outDepth);
+  }
+
   function botSmart(state, seat, simulating) {
     if (state.phase === 'over' || state.turn !== seat) return null;
     const me = state.seats[seat], team = teamOf(seat), P = smartParams(state, seat);
     if (state.phase === 'draw') return smartDraw(state, seat, simulating, P);
     if (state.mustUse) return findUseFor(state, seat, state.mustUse) || { type: 'returnPile' };
     const mayWin = !P.goOutCheck || !canGoOut(state, team) || goOutWins(state, seat);
+    if (P.finish && !simulating) {
+      const plan = (state.finishPlan && state.finishPlan.turn === state.turnNo && state.finishPlan.seat === seat) ? state.finishPlan : null;
+      let steps = plan ? plan.steps : findGoOut(state, seat, P);
+      if (steps && steps.length) { const nxt = steps[0]; state.finishPlan = { turn: state.turnNo, seat, steps: steps.slice(1) }; return nxt; }
+    }
     for (const mv of smartMeldMoves(state, seat, P)) {
       if (!mayWin && me.hand.length - mv.act.cardIds.length < 2) continue;        // keep a card rather than end a losing game
       if (!tryOn(state, seat, mv.act)) continue;
