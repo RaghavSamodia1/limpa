@@ -1,3 +1,5 @@
+> Project memory lives in `vault/` (open it in Obsidian). See `CLAUDE.md`.
+
 # Limpa's Breakfast
 
 A team card game for four players (2v2): Bhujia vs Kachori. Play with friends passing one phone round, or against the computer.
