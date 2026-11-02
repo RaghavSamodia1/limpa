@@ -50,12 +50,25 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     if (s.phase === 'draw') { await who.dispatchEvent('[data-act=draw]', 'click'); await sleep(700); continue; }
     // try to meld something obvious via the engine's own suggestion, else throw
     const id = await who.evaluate(() => { const U = window.__limpa.UI, E = window.__limpa.E; const g = U.G; return g.seats[g.turn === U.viewer ? U.viewer : 0].hand[0].id; });
-    await who.dispatchEvent('[data-act=goThrow]', 'click'); await who.dispatchEvent(`.hc[data-id="${id}"]`, 'click'); await who.dispatchEvent('[data-act=discard]', 'click');
+    await who.dispatchEvent(`.hc[data-id="${id}"]`, 'click'); await who.dispatchEvent('[data-act=discard]', 'click');
     s.turn === 0 ? hostTurns++ : guestTurns++;
     await sleep(700);
   }
   ok(hostTurns >= 3 && guestTurns >= 3, `both humans played turns over the network (host ${hostTurns}, guest ${guestTurns})`);
   ok(await sync(), 'both phones agree on whose turn it is and the phase');
+  // buzzer: the phone that is waiting rings the human whose turn it is
+  for (let i = 0; i < 40; i++) {
+    const s = await st(host);
+    if (s.turn === 0 || s.turn === 2) {
+      const waiter = s.turn === 0 ? guest : host, target = s.turn === 0 ? host : guest;
+      if (await waiter.$('[data-act=buzz]')) {
+        await waiter.dispatchEvent('[data-act=buzz]', 'click');
+        ok(await until(target, () => /waiting for you/.test((document.getElementById('toast') || {}).textContent || ''), null, 5000), 'buzzer: the player taking their time gets rung');
+        break;
+      }
+    }
+    await sleep(300);
+  }
   await host.screenshot({ path: out + 'online_host_game.png' }); await guest.screenshot({ path: out + 'online_guest_game.png' });
 
   // ---- cheating: guest acts out of turn / as another seat over the wire

@@ -28,7 +28,7 @@ On a phone, "Add to Home Screen" installs it full-screen with its own icon.
 - **Less fiddly.** No dragging needed: tap cards, then *Place*, or select cards and tap a meld to add them; tap a card and *Throw*. The hand sorts itself. Optional no-timer mode (solo games) and slow computer players, in the menu under *Comfort*.
 - **Easy to read.** Large type, large buttons, high-contrast table labels, and all melds shown at once: the table tips flatter as it fills up before any card shrinks.
 - **Sound.** Small synthesised effects with a mute toggle. No audio files.
-- **Online rooms.** *Play online with friends* makes a room code like `LB-7KQ2M` plus a share link (system share sheet, WhatsApp, or copy).
+- **Online rooms.** *Play online with friends* makes a room code like `482913` (six numbers) plus a share link (system share sheet, WhatsApp, or copy).
   Friends open the link, type their name and join; the host picks which seats are friends and which are computers, then starts. See below.
 - **Pass and play.** Make more than one seat Human and the phone shows a "pass the phone" screen between turns.
 
@@ -40,7 +40,7 @@ Rooms are peer to peer (WebRTC through [PeerJS](https://peerjs.com), vendored in
 checks every move with the rules engine, and sends each guest a copy that contains only that guest's own hand (everyone else's hands, the stack and the extra
 decks are blank on a guest's phone). The free public PeerJS broker only introduces the phones to each other.
 
-- **Share:** the host shares the code or link; opening `...#room=LB-7KQ2M` goes straight to the Join screen with the code filled in.
+- **Share:** the host shares the code or link; opening `...#room=482913` goes straight to the Join screen with the code filled in.
 - **Reconnecting:** phones in the background lose their connection (for example while sharing the link). Guests reconnect on their own and keep their seat.
   The host's game is saved on the host's phone, so after a reload the menu offers *Resume your room*.
 - **Away players:** if a player is gone for 3 minutes the computer plays their seat until they return (rules section 11).
