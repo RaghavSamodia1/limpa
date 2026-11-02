@@ -774,8 +774,8 @@ function fitMelds() {
     const melds = zone.querySelector('.melds'), first = melds && melds.querySelector('.tc');
     if (!first || !zone.offsetParent) return;                 // nothing to fit while a mat is hidden
     const mw0 = first.offsetWidth; let mw = mw0;
-    for (let i = 0; i < 24 && zone.scrollHeight > zone.clientHeight + 1 && mw > 20; i++) {
-      mw *= .94; melds.style.setProperty('--mw', mw.toFixed(1) + 'px');
+    for (let i = 0; i < 50 && zone.scrollHeight > zone.clientHeight + 1 && mw > 20; i++) {
+      mw *= .975; melds.style.setProperty('--mw', mw.toFixed(1) + 'px');
     }
     worst = Math.min(worst, mw / mw0);
   });
