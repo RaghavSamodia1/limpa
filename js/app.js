@@ -658,7 +658,7 @@ function inset(side) {
 // must be so that its far edge lands just under the avatars after perspective is applied.
 function metrics(n, showHand) {
   const W = Math.min(app.clientWidth || window.innerWidth, 480), H = app.clientHeight || window.innerHeight;
-  const hw = Math.max(56, Math.min(92, W * .19)), hh = hw * 1.42;
+  const hw = Math.max(58, Math.min(104, W * .215)), hh = hw * 1.42;
   const avail = W - 20 - hw;
   const minStep = hw * .36, maxStep = hw * .6;
   const per1 = Math.max(2, Math.floor(avail / minStep) + 1);
@@ -809,6 +809,9 @@ function render(carry) {
 }
 window.addEventListener('resize', () => { if (UI.screen === 'game') render(); });
 
+const isStandalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); UI.installEvt = e; });
+window.addEventListener('appinstalled', () => { UI.installEvt = null; render(); });
 function renderMenu() {
   const fan = [['S',1],['H',13],['D',12],['C',11],['S',10]].map(([s, r], i) =>
     cardHTML({ id:'m' + i, s, r }, '', `style="--sw:calc(var(--hw)*.4);width:var(--hw);height:var(--hh);font-size:calc(var(--hw)*.36);left:calc(50% - var(--hw)/2 + ${(i - 2) * 41}px);transform:rotate(${(i - 2) * 11}deg)"`)).join('');
@@ -821,6 +824,7 @@ function renderMenu() {
       <button class="btn green" data-act="createRoom">Play online with friends</button>
       <button class="btn ghost" data-act="join">Join with a room code</button>
       <button class="btn ghost" data-act="rules">How to play</button>
+      ${isStandalone() ? '' : '<button class="btn ghost" data-act="install">📲 Add to home screen</button>'}
       ${themePicker()}
       <div class="tagline">2 v 2 · play with friends on one phone, or against the computer</div>
     </div></div>`;
@@ -1110,6 +1114,15 @@ function renderModal() {
       <div class="ava">${s.avatar}</div><h2>${esc(s.name)}</h2>
       <div class="muted">Team ${esc(G.teams[s.team].name)}</div></div></div>`;
   }
+  if (M.type === 'install') {
+    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    return `<div class="ov"><div class="modal"><h2>Add to home screen</h2>
+      <ol class="how">${ios
+        ? '<li>Tap the <b>Share</b> button (square with an arrow) at the bottom of Safari.</li><li>Scroll and tap <b>Add to Home Screen</b>.</li><li>Tap <b>Add</b>. Open it from the new icon: it runs full screen.</li>'
+        : '<li>Tap the <b>⋮ menu</b> in your browser.</li><li>Tap <b>Install app</b> or <b>Add to Home screen</b>.</li><li>Open it from the new icon: it runs full screen.</li>'}</ol>
+      ${ios ? '<p class="muted" style="font-size:14px">On iPhone this only works in Safari.</p>' : ''}
+      <div style="text-align:right;margin-top:10px"><button class="btn" data-act="close">Got it</button></div></div></div>`;
+  }
   if (M.type === 'rules') return `<div class="ov"><div class="modal">${rulesHTML()}<div style="text-align:right;margin-top:10px"><button class="btn" data-act="close">Got it</button></div></div></div>`;
   if (M.type === 'confirmImpure') {
     return `<div class="ov"><div class="modal" style="text-align:center">
@@ -1244,6 +1257,10 @@ app.addEventListener('click', (e) => {
       joinRoom(code); break;
     }
     case 'home': UI.screen = 'menu'; UI.joinMsg = ''; render(); break;
+    case 'install': {
+      if (UI.installEvt) { const ev = UI.installEvt; UI.installEvt = null; try { ev.prompt(); } catch (e) {} break; }
+      UI.modal = { type:'install' }; render(); break;
+    }
     case 'rules': UI.modal = { type:'rules', prev:UI.modal }; render(); break;
     case 'close': UI.modal = (UI.modal && UI.modal.prev) || null; render(); break;
     case 'confirmImpure': {
