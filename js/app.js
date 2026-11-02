@@ -964,12 +964,12 @@ function renderGame() {
   const returnBtn = myTurn && G.mustUse, endBtn = myTurn && G.finalTurn && !G.mustUse;
   // plain-language instruction for this step
   const who = G.seats[G.turn];
-  const STEP = { draw: ['', 'Draw a card', G.finalTurn ? 'Final turn: take the pile, or end the game.' : 'Tap Draw card for a new card, or Take pile to pick up the whole pile.'],
-    play: ['', 'Meld if you can, then throw', G.mustUse ? 'Use the glowing card in a meld, or tap Return to draw instead.' : 'Pick cards for a meld, or one card to Throw.'] };
+  const STEP = { draw: ['', 'Draw a card', G.finalTurn ? 'Last turn: take the pile or end.' : ''],
+    play: ['', 'Meld, then throw', G.mustUse ? 'Use the glowing card, or Return.' : ''] };
   let g1 = '', g2 = '';
   if (UI.spinning) { g1 = 'Dealing the cards…'; }
   else if (G.phase === 'over') { g1 = 'Game over'; }
-  else if (stage === 'watch') { g1 = who.away ? who.name + ' lost connection' : who.name + (who.bot ? ' is playing…' : "'s turn"); g2 = who.away ? 'Waiting for them to come back.' : 'Watch the table, or look at the melds below.'; }
+  else if (stage === 'watch') { g1 = who.away ? who.name + ' lost connection' : who.name + (who.bot ? ' is playing…' : "'s turn"); g2 = who.away ? 'Waiting for them to come back.' : ''; }
   else { g1 = STEP[stage][1]; g2 = hintOn ? '💡 ' + H.text : STEP[stage][2]; }
   // until an extra-deck card has been melded, keep reminding (it also stays visible when a suggestion is shown)
   const deckNote = stage === 'play' && G.teams[myTeam].deckStatus === 'claimed' && !G.teams[myTeam].deckUsed;
