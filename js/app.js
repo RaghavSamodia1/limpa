@@ -667,7 +667,7 @@ function metrics(n, showHand) {
   const step = per > 1 ? Math.min(maxStep, avail / (per - 1)) : 0;
   const rowStep = hh * .5, R = hh * 4.5;
   const actH = 50, guideH = 46, safeB = inset('bottom'), safeT = inset('top');
-  const handH = (showHand ? hh * .95 + (rows - 1) * rowStep : hh * .62) + safeB;
+  const handH = (showHand ? hh * .95 + (rows - 1) * rowStep : hh * .62) + safeB * .35;
   const dockH = guideH + actH + handH;
   const c = Math.cos(UI.tilt * Math.PI / 180), s = Math.sin(UI.tilt * Math.PI / 180);
   const yb = H - (dockH - 30);                 // near edge of the table top, just under the dock edge
@@ -712,7 +712,7 @@ function launch(node, from, to, delay, fade, done) {
   w.appendChild(node); document.body.appendChild(w);
   const tf = (g, d) => `translate(${d ? g.cx - to.cx : 0}px,${d ? g.cy - to.cy : 0}px) rotate(${g.rot}deg) scale(${(g.pw / to.nw).toFixed(3)}) rotateX(${g.tilt}deg)`;
   const a = w.animate([{ transform: tf(from, true), opacity: 1 }, { transform: tf(to, false), opacity: fade ? 0 : 1 }],
-    { duration: 280, delay, easing: 'cubic-bezier(.23,1,.32,1)', fill: 'both' });
+    { duration: 340, delay, easing: 'cubic-bezier(.22,.9,.28,1)', fill: 'both' });
   const end = () => { w.remove(); if (done) done(); };
   a.finished.then(end, end);
 }
@@ -748,6 +748,10 @@ function playFlights(before) {
     else if (z === 'hand') from = el.querySelector('.xd') ? before.deck : before.stack;
     else if (src) from = src;
     if (from) flyCard(el, from, Math.min(n++, 14) * 28);
+    else if (prev && prev.pw && z === 'hand' && prev.zone === 'hand' && !REDUCED) {          // a card that stayed in the hand glides to its new place (or lifts / drops) instead of snapping
+      const g = geom(el, true), dx = prev.cx - g.cx, dy = prev.cy - g.cy;
+      if (Math.abs(dx) + Math.abs(dy) > 1.5) el.animate([{ translate: dx + 'px ' + dy + 'px' }, { translate: '0px 0px' }], { duration: 240, easing: 'cubic-bezier(.23,1,.32,1)' });
+    }
   });
   if (!src) return;
   if (actor.type === 'draw' && before.stack) {            // a computer player draws: a card back goes to their hand
@@ -774,6 +778,14 @@ function fitMelds() {
     const melds = zone.querySelector('.melds'), first = melds && melds.querySelector('.tc');
     if (!first || !zone.offsetParent) return;                 // nothing to fit while a mat is hidden
     const mw0 = first.offsetWidth; let mw = mw0;
+    if (zone.scrollHeight <= zone.clientHeight + 1) {            // lots of room: let the melds grow to use it
+      for (let i = 0; i < 14; i++) {
+        const nx = mw * 1.04; melds.style.setProperty('--mw', nx.toFixed(1) + 'px');
+        if (zone.scrollHeight > zone.clientHeight + 1 || nx > mw0 * 1.45) { melds.style.setProperty('--mw', mw.toFixed(1) + 'px'); break; }
+        mw = nx;
+      }
+      worst = Math.max(worst, mw / mw0 > 1 ? 1 : worst); return;
+    }
     for (let i = 0; i < 50 && zone.scrollHeight > zone.clientHeight + 1 && mw > 20; i++) {
       mw *= .975; melds.style.setProperty('--mw', mw.toFixed(1) + 'px');
     }
@@ -1016,6 +1028,7 @@ function renderGame() {
       <button class="btn ${newValid ? 'green place' : ''}" data-act="newMeld" id="newBtn" ${on && selCards.length >= 3 ? '' : 'disabled'}>${newValid ? 'Place ✓' : 'New meld'}</button>
       ${returnBtn ? '' : endBtn ? `<button class="btn red" data-act="endGame">End game</button>` : `<button class="btn red" data-act="discard" id="throwBtn" ${selCards.length === 1 && !G.finalTurn ? '' : 'disabled'}>${thrower ? 'Throw ' + esc(thrower) : 'Throw'}</button>`}</span>`;
   else if (stage === 'watch' && UI.net && G.phase !== 'over' && !who.bot && !who.away && G.turn !== viewer) ctl = `<span class="ctl"><button class="btn" data-act="buzz" aria-label="Ring ${esc(who.name)}">🔔 Ring ${esc(who.name)}</button></span>`;
+  else if (stage === 'watch' && G.phase !== 'over' && !UI.spinning) ctl = `<span class="ctl"><span class="status">${esc(who.away ? who.name + ' lost connection' : who.name + (who.bot ? ' is thinking…' : ' is playing…'))}</span></span>`;
   else ctl = '<span class="ctl"></span>';
 
   const showTimer = myTurn && G.phase === 'draw' && UI.deadline;
