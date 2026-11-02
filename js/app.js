@@ -666,7 +666,7 @@ function metrics(n, showHand) {
   const per = Math.ceil(Math.max(1, n) / rows);
   const step = per > 1 ? Math.min(maxStep, avail / (per - 1)) : 0;
   const rowStep = hh * .5, R = hh * 4.5;
-  const actH = 50, guideH = 84, safeB = inset('bottom'), safeT = inset('top');
+  const actH = 50, guideH = 46, safeB = inset('bottom'), safeT = inset('top');
   const handH = (showHand ? hh * .95 + (rows - 1) * rowStep : hh * .62) + safeB;
   const dockH = guideH + actH + handH;
   const c = Math.cos(UI.tilt * Math.PI / 180), s = Math.sin(UI.tilt * Math.PI / 180);
@@ -972,13 +972,13 @@ function renderGame() {
   else if (G.mustUse && stage === 'play') g1 = 'Use the glowing card, or Return.';
   else if (G.finalTurn && stage === 'draw') g1 = 'Last turn: take the pile or end.';
   const deckNote = stage === 'play' && G.teams[myTeam].deckStatus === 'claimed' && !G.teams[myTeam].deckUsed;
-  const viewNow = UI.peek || 'auto';
+  const viewNow = UI.peek || (stage === 'draw' ? 'piles' : stage === 'play' ? 'mine' : 'all');   // big and simple by default; All is one tap away
   const entering = UI.lastStage !== stage || UI.lastView !== viewNow;
   UI.lastStage = stage; UI.lastView = viewNow;
-  const showOwn = viewNow === 'auto' || viewNow === 'mine';          // by default the whole table is shown
-  const showOpp = viewNow === 'auto' || viewNow === 'opp';
+  const showOwn = viewNow === 'all' || viewNow === 'mine';          // by default the whole table is shown
+  const showOpp = viewNow === 'all' || viewNow === 'opp';
   const pilesBig = viewNow === 'piles';
-  const views = `<div class="views" role="group" aria-label="What to look at">${[['mine', 'Your melds'], ['opp', 'Their melds'], ['piles', 'Pile'], ['auto', 'All']].map(([v, t]) =>
+  const views = `<div class="views" role="group" aria-label="What to look at">${[['mine', 'Your melds'], ['opp', 'Their melds'], ['piles', 'Pile'], ['all', 'All']].map(([v, t]) =>
     `<button class="vchip ${viewNow === v ? 'on' : ''}" data-act="peek" data-v="${v}" aria-pressed="${viewNow === v}">${t}</button>`).join('')}</div>`;
 
   const mid = `<div class="mid" id="piles" data-drop="discard">
@@ -1323,7 +1323,7 @@ app.addEventListener('click', (e) => {
       else guestSend({ t: 'buzz', to });
       toast('🔔 Rang ' + G.seats[to].name, 'good'); break;
     }
-    case 'peek': UI.peek = el.dataset.v === 'auto' ? null : el.dataset.v; render(); break;
+    case 'peek': UI.peek = el.dataset.v; render(); break;
     case 'help': {
       const stage = stageOf(G, G.turn === UI.viewer && !G.seats[G.turn].bot && G.phase !== 'over'), H = currentHint(stage);
       if (!H) break;
