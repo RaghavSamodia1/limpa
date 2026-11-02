@@ -964,14 +964,13 @@ function renderGame() {
   const returnBtn = myTurn && G.mustUse, endBtn = myTurn && G.finalTurn && !G.mustUse;
   // plain-language instruction for this step
   const who = G.seats[G.turn];
-  const STEP = { draw: ['', 'Draw a card', G.finalTurn ? 'Last turn: take the pile or end.' : ''],
-    play: ['', 'Meld, then throw', G.mustUse ? 'Use the glowing card, or Return.' : ''] };
+  // no instruction panel: the buttons say what to do. Only exceptions are spelled out.
   let g1 = '', g2 = '';
-  if (UI.spinning) { g1 = 'Dealing the cards…'; }
-  else if (G.phase === 'over') { g1 = 'Game over'; }
-  else if (stage === 'watch') { g1 = who.away ? who.name + ' lost connection' : who.name + (who.bot ? ' is playing…' : "'s turn"); g2 = who.away ? 'Waiting for them to come back.' : ''; }
-  else { g1 = STEP[stage][1]; g2 = hintOn ? '💡 ' + H.text : STEP[stage][2]; }
-  // until an extra-deck card has been melded, keep reminding (it also stays visible when a suggestion is shown)
+  if (UI.spinning || G.phase === 'over') g1 = '';
+  else if (stage === 'watch') { if (who.away) g1 = who.name + ' lost connection'; }
+  else if (hintOn) g1 = '💡 ' + H.text;
+  else if (G.mustUse && stage === 'play') g1 = 'Use the glowing card, or Return.';
+  else if (G.finalTurn && stage === 'draw') g1 = 'Last turn: take the pile or end.';
   const deckNote = stage === 'play' && G.teams[myTeam].deckStatus === 'claimed' && !G.teams[myTeam].deckUsed;
   const viewNow = UI.peek || 'auto';
   const entering = UI.lastStage !== stage || UI.lastView !== viewNow;
@@ -1060,7 +1059,7 @@ function renderGame() {
     </div>
     <div class="seats">${seatChip(seatAt(1), 'l')}${seatChip(seatAt(2), 't')}${seatChip(seatAt(3), 'r')}</div>
     <div class="dock">
-      <div class="cta">${views}<div class="guide"><div class="g1">${g1}</div>${g2 ? `<div class="g2">${esc(g2)}</div>` : ''}${deckNote ? '<div class="g3">🟠 Meld at least one orange-dot card (extra deck).</div>' : ''}</div></div>
+      <div class="cta">${views}${g1 || deckNote ? `<div class="guide">${g1 ? `<div class="g1">${esc(g1)}</div>` : ''}${deckNote ? '<div class="g3">🟠 Meld an orange-dot card (extra deck).</div>' : ''}</div>` : ''}</div>
       <div class="actions">${meBlock}${ctl}</div>
       <div class="handwrap">${handHTML}</div>
     </div>
