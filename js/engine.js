@@ -39,8 +39,7 @@
     s.seats = st.seats.map((p) => Object.assign({}, p, { hand: p.hand.slice() }));
     s.teams = st.teams.map((t) => Object.assign({}, t, { deck: t.deck.slice(), penalties: t.penalties.slice(), melds: t.melds.map((m) => Object.assign({}, m)) }));
     s.stack = st.stack.slice(); s.discard = st.discard.slice(); s.log = st.log.slice();
-    if (st.mem) { const m = st.mem; s.mem = { known: m.known.map((a) => a.slice()), passed: m.passed.map((a) => a.slice()), threw: m.threw.map((a) => a.slice()), took: m.took.slice(), lastPlay: m.lastPlay.slice() }; }
-    return s;
+    return s;                                         // state.minds is copy-on-write (see witness), so it is shared
   }
 
   function shuffle(a) {
@@ -278,7 +277,7 @@
       mustUse: null, pileBackup: null, drewFrom: null, pileRefused: false,
       finalTurn: false, nextMeldId: 1, log: [], result: null,
     };
-    memOf(state);
+    mindsOf(state);
     startTurn(state, state.turn, []);
     return state;
   }
@@ -443,19 +442,30 @@
     if (cards.some((c) => c.x === team)) state.teams[team].deckUsed = true;
   }
 
-  /* ---------------- Public memory ----------------
-     Only what everyone at the table has seen, so computer players can use it without peeking:
-     known  - cards picked up with the face-up pile and still in that hand (dropped again when melded or thrown)
-     passed - top cards a player chose not to take (drew from the centre instead, or returned the pile)
-     threw  - cards a player threw
-     lastPlay - the turn number of each player's latest meld/throw step (to read "they would have added it by now") */
+  /* ---------------- Memories ----------------
+     Every player has their own memory (state.minds[seat]) of what they saw happen at the table. A computer player reads
+     only its own. Everyone sees the same table, so what they note down is the same public play:
+     known    - for each player, cards seen going into their hand with the face-up pile (dropped when melded or thrown)
+     passed   - top cards each player chose not to take (drew from the centre instead, or returned the pile)
+     threw    - cards each player threw
+     took     - how many times each player took the pile
+     lastPlay - the turn of each player's latest meld/throw step (to read "they would have added that by now")
+     Memories are copy-on-write: an update replaces the lists it changes, so copies of a game can share them. */
   const ctype = (c) => (c.s === 'J' ? 'J' : c.s + c.r);
-  function memOf(state) {
-    if (!state.mem) state.mem = { known: [[], [], [], []], passed: [[], [], [], []], threw: [[], [], [], []], took: [0, 0, 0, 0], lastPlay: [-1, -1, -1, -1] };
-    return state.mem;
+  const newMind = () => ({ known: [[], [], [], []], passed: [[], [], [], []], threw: [[], [], [], []], took: [0, 0, 0, 0], lastPlay: [-1, -1, -1, -1] });
+  function mindsOf(state) { if (!state.minds) state.minds = [0, 1, 2, 3].map(newMind); return state.minds; }
+  const mindOf = (state, seat) => mindsOf(state)[seat];
+  // Everyone at the table watches player p do something; each writes it into their own memory.
+  function witness(state, p, changes) {
+    state.minds = mindsOf(state).map((m) => {
+      if (!m) return m;                               // a phone in an online game only holds its own player's memory
+      const n = Object.assign({}, m);
+      for (const f in changes) n[f] = m[f].map((x, i) => (i === p ? changes[f](x) : x));
+      return n;
+    });
   }
-  function memNote(list, c, turnNo, max) { list.push({ k: ctype(c), s: c.s, r: c.r, t: turnNo }); if (list.length > max) list.shift(); }
-  function memForget(state, seat, ids) { const m = memOf(state); m.known[seat] = m.known[seat].filter((x) => !ids.includes(x.id)); }
+  const noted = (c, t, max) => (list) => list.concat([{ k: ctype(c), s: c.s, r: c.r, t }]).slice(-max);
+  const dropIds = (ids) => (list) => list.filter((x) => !ids.includes(x.id));
 
   /* ---------------- apply() ---------------- */
   function apply(state, seat, action) {
@@ -475,9 +485,9 @@
       case 'draw': {
         if (state.phase !== 'draw') return fail('You have already drawn this turn.');
         if (!state.stack.length) return fail('The centre stack is empty. Pick up the discard pile or end the game.');
-        const mem = memOf(state);
-        if (state.discard.length && !state.pileRefused) memNote(mem.passed[seat], state.discard[state.discard.length - 1], state.turnNo, 10);
-        mem.lastPlay[seat] = state.turnNo;
+        const t0 = state.turnNo;
+        witness(state, seat, Object.assign({ lastPlay: () => t0 },
+          state.discard.length && !state.pileRefused ? { passed: noted(state.discard[state.discard.length - 1], t0, 10) } : {}));
         const c = state.stack.pop(); me.hand.push(c);
         state.phase = 'play'; state.drewFrom = 'stack'; state.lastDrawn = c.id;
         log(state, events, me.name + ' drew from the centre.');
@@ -490,9 +500,8 @@
         if (state.pileRefused) return fail('You already returned the pile this turn. Draw from the centre.');
         const top = state.discard[state.discard.length - 1];
         state.pileBackup = state.discard.map((c) => c.id);
-        const mem = memOf(state);
-        state.discard.forEach((c) => mem.known[seat].push({ id: c.id, k: ctype(c) }));
-        mem.took[seat]++; mem.lastPlay[seat] = state.turnNo;
+        const seenPile = state.discard.map((c) => ({ id: c.id, k: ctype(c) })), t0 = state.turnNo;
+        witness(state, seat, { known: (l) => l.concat(seenPile), took: (n) => n + 1, lastPlay: () => t0 });
         me.hand.push(...state.discard); state.discard = [];
         state.mustUse = top.id; state.phase = 'play'; state.drewFrom = 'pile';
         log(state, events, me.name + ' picked up the discard pile (' + state.pileBackup.length + ' cards).');
@@ -502,8 +511,7 @@
         if (state.drewFrom !== 'pile' || !state.mustUse) return fail('Nothing to return.');
         const back = state.pileBackup.map((id) => me.hand.find((c) => c.id === id));
         me.hand = me.hand.filter((c) => !state.pileBackup.includes(c.id));
-        memForget(state, seat, state.pileBackup); memOf(state).took[seat]--;
-        memNote(memOf(state).passed[seat], back[back.length - 1], state.turnNo, 10);     // looked, and could not use it
+        witness(state, seat, { known: dropIds(state.pileBackup), took: (n) => n - 1, passed: noted(back[back.length - 1], state.turnNo, 10) });   // looked, and could not use it
         state.discard = back; state.mustUse = null; state.pileBackup = null;
         state.drewFrom = null; state.phase = 'draw'; state.pileRefused = true;
         log(state, events, me.name + " couldn't use the top card and returned the pile.", 'warn');
@@ -525,7 +533,7 @@
         T.melds.push(m);
         const mustName = state.mustUse ? cardName(cards.find((c) => c.id === state.mustUse)) : null;
         me.hand = me.hand.filter((c) => !ids.includes(c.id));
-        memForget(state, seat, ids);
+        witness(state, seat, { known: dropIds(ids) });
         markDeckUse(state, seat, cards);
         state.mustUse = null;
         const r = afterMeld(state, seat, events, mustName);
@@ -547,7 +555,7 @@
           return fail('This wildcard will make your pure meld impure (200 → 100 at the end of your turn).', 'confirmImpure');
         save();                                       // the snapshot holds its own copy of every meld
         if (m.type === 'seq') m.slots = v.slots; else m.cards = v.cards;
-        m.lt = state.turnNo; memForget(state, seat, ids);
+        m.lt = state.turnNo; witness(state, seat, { known: dropIds(ids) });
         const mustName = state.mustUse ? cardName(cards.find((c) => c.id === state.mustUse)) : null;
         me.hand = me.hand.filter((c) => !ids.includes(c.id));
         markDeckUse(state, seat, cards);
@@ -569,7 +577,7 @@
           return fail("You can't empty your hand yet (" + goOutBlockers(state, team).join(', ') + ').');
         const c = me.hand.splice(i, 1)[0];
         state.discard.push(c);
-        memForget(state, seat, [c.id]); memNote(memOf(state).threw[seat], c, state.turnNo, 14);
+        witness(state, seat, { known: dropIds([c.id]), threw: noted(c, state.turnNo, 14) });
         log(state, events, me.name + ' discarded ' + cardName(c) + '.');
         if (state.finalTurn) { scoreMelds(state, team, events); finish(state, events, 'stack'); return { ok: true, events }; }
         if (me.hand.length === 0) {
@@ -594,7 +602,7 @@
         const c = state.stack.pop(); me.hand.push(c); state.phase = 'play'; state.drewFrom = 'stack';
         checkStackEmpty(state, events);
         me.hand = me.hand.filter((x) => x.id !== c.id); state.discard.push(c);
-        memNote(memOf(state).threw[seat], c, state.turnNo, 14);
+        witness(state, seat, { threw: noted(c, state.turnNo, 14) });
         endTurn(state, events);
         return { ok: true, events };
       }
@@ -609,6 +617,7 @@
     s.stackCount = s.stack.length; s.stack = [];
     s.teams.forEach((t) => { t.deckCount = t.deck.length; t.deck = []; });
     delete s.finishPlan;                                  // a computer player's private plan (card ids of its hand)
+    if (s.minds) s.minds = s.minds.map((m, i) => (i === seat ? m : null));   // each phone gets only its own player's memory
     if (s.turn !== seat) delete s.lastDrawn;              // card ids name the card, so only the drawer may see this one
     return s;
   }
@@ -857,7 +866,7 @@
   const typeTotal = (k) => (k === 'J' ? 4 : 2);
   function beliefs(state, seat, P) {
     P = P || CFG.smart;
-    const mem = memOf(state), turn = state.turnNo;
+    const mem = mindOf(state, seat), turn = state.turnNo;          // this player's own memory, nobody else's
     const seen = {}; const see = (k) => { seen[k] = (seen[k] || 0) + 1; };
     state.seats[seat].hand.forEach((c) => see(ctype(c)));
     state.discard.forEach((c) => see(ctype(c)));
@@ -1110,7 +1119,7 @@
     s.teams.forEach((t) => pool.push(...t.deck));
     shuffle(pool); let k = 0;
     if (B) {
-      const mem = memOf(state), byId = new Map(pool.map((c) => [c.id, c])), used = new Set();
+      const mem = mindOf(state, seat), byId = new Map(pool.map((c) => [c.id, c])), used = new Set();
       const hands = [0, 1, 2, 3].map((i) => (i === seat ? null : mem.known[i].map((x) => byId.get(x.id)).filter(Boolean)));
       hands.forEach((h) => h && h.forEach((c) => used.add(c.id)));
       for (const i of shuffle([0, 1, 2, 3].filter((x) => x !== seat))) {
