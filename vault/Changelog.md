@@ -6,4 +6,6 @@
 - #9 Bigger default views
 - #10 Bigger cards, Add to home screen
 - #11 Computer plays to finish; bigger meld mat; less wasted space; smoother cards
+- #12 Obsidian vault as project memory
+- #13 Pile pickup fix (glowing card stays selected); Expert with table memory, hand reading and team play; 4x faster engine copies
 Earlier: 3D UI, themes, bots (Easy/Smart/Expert), online rooms, GitHub Pages hosting, assistance, staged turns (later removed).
