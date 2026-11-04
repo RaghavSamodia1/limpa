@@ -608,6 +608,8 @@
     s.seats.forEach((p, i) => { if (i !== seat) { p.handCount = p.hand.length; p.hand = []; } });
     s.stackCount = s.stack.length; s.stack = [];
     s.teams.forEach((t) => { t.deckCount = t.deck.length; t.deck = []; });
+    delete s.finishPlan;                                  // a computer player's private plan (card ids of its hand)
+    if (s.turn !== seat) delete s.lastDrawn;              // card ids name the card, so only the drawer may see this one
     return s;
   }
 
@@ -818,7 +820,7 @@
     addBase: 50, addLenW: 6, newBase: 60, newLenW: 12, wildNewBase: 28, completeW: 90, pureW: 80, pickTier: 6,
     // expert play: sets only from edge ranks (A K Q J 3 4) until the game is nearly over, card counting for outs,
     // and keeping a wildcard back while the natural card that would finish a pure meld is still likely to come
-    pureFirst: 1, pureU: .95, pureNewU: .6, pureLive: 1, finish: 1, outMaxHand: 9, outBudget: 400, outBranch: 7, outDepth: 5, team: 0, claim: 0, dangerUse: 30, dangerPile: .25, dangerDone: 30, infMeld: .15, infPass: .75, infThrow: .55, infAge: 16, rollouts: 0, rollMs: 0, rollCands: 4, expertMs: 300, setMode: 1, midSetU: .85, midSetHand: 3, setKeepRuns: 1, outsW: 9, setOutsW: 4, dangerGapW: 10, waitLive: 2, waitU: .55,
+    pureFirst: 1, pureU: .95, pureNewU: .6, pureLive: 1, finish: 1, outMaxHand: 9, outBudget: 400, outBranch: 7, outDepth: 5, team: 0, claim: 0, rollMarginW: .0004, dangerUse: 45, dangerPile: .4, dangerDone: 30, infMeld: .15, infPass: .75, infThrow: .55, infAge: 16, rollouts: 0, rollMs: 0, rollCands: 4, expertMs: 300, setMode: 1, midSetU: .85, midSetHand: 3, setKeepRuns: 1, outsW: 9, setOutsW: 4, dangerGapW: 10, waitLive: 2, waitU: .55,
   };
   const smartParams = (state, seat) => {
     const P = Object.assign({}, CFG.smart, state.seats[seat].params || null);
@@ -1150,14 +1152,16 @@
         if (!apply(s2, seat, { type: 'discard', cardId: c.id }).ok) return;
         const R = s2.phase === 'over' ? s2.result : playOut(s2);
         if (!R) return;
-        const mine = R.scores[team], theirs = R.scores[1 - team];
-        tot[i] += (R.winner === null ? .5 : R.winner === team ? 1 : 0) + .0004 * (mine - theirs);
+        tot[i] += outcome(R, team, P);
       });
       done++;
     }
     let bi = 0; tot.forEach((v, i) => { if (v > tot[bi]) bi = i; });
     return done ? cands[bi].id : fallback;
   }
+  // value of a finished (simulated) game for a team: a win, plus a little for the margin
+  const outcome = (R, team, P) => (R.winner === null ? .5 : R.winner === team ? 1 : 0) + P.rollMarginW * (R.scores[team] - R.scores[1 - team]);
+
   function smartDraw(state, seat, simulating, P) {
     if (state.discard.length && !state.pileRefused) {
       const test = clone(state);

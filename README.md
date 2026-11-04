@@ -59,8 +59,10 @@ section differs. There are three levels, chosen in the lobby (Expert is the defa
 - **Smart** plays the way strong players do. Sets only from edge ranks (A, K, Q, J, 3, 4), never 777 or 888 until the game is nearly over, because those cards are needed for sequences.
   It counts cards (there are two decks, so it knows which cards are still out there), keeps a wildcard back while the natural card that would finish a pure meld is still likely to arrive,
   avoids throwing cards the other team can build on (including one gap away from the end of their run), claims and uses its extra deck, and will not go out if that would lose the game.
-- **Expert** is Smart plus lookahead. For each card it might throw, it deals out everything it cannot see (the stack, the other hands, the extra decks) in many plausible ways,
-  plays each game out to the end, and throws the card that wins most often. It thinks for about 0.3 seconds per throw; a faster phone simply tries more deals.
+- **Expert** is Smart plus table memory, team play and lookahead.
+  - *Memory:* it remembers what everyone saw: which pile cards each player took, which top cards they passed on, what they threw, and which cards would extend their melds that they still haven't played. From that it estimates the chance that each other player (opponents and partner) holds each card. Only public information is used; a test checks it never peeks.
+  - *Team play:* it avoids throwing a card the next player (always an opponent) is likely to use to take the whole pile, more so the bigger the pile, and won't hand the other team the card that finishes one of their 6-card melds. Cards its partner is known to hold count as help for the team's melds, cards an opponent probably holds don't. While its team's extra deck is unclaimed it looks for a way to empty the hand and claim it.
+  - *Lookahead:* for each card it might throw, it deals out everything it cannot see in plausible ways (cards seen going into a hand stay there, the rest follow the estimates), plays each game out to the end, and throws the card that wins most often. It thinks for about 0.3 seconds per throw.
 
 Measured with `node test/bot-eval.js` (sides swapped every game; "decisive" ignores draws):
 
@@ -69,6 +71,8 @@ Measured with `node test/bot-eval.js` (sides swapped every game; "decisive" igno
 | Smart vs Easy (2,000 games) | 64.8% to 28.1%, 69.7% of decided games |
 | Smart vs the previous Smart (2,400 games) | 60.5% of decided games |
 | Expert vs Smart (400 games) | 60.7% of decided games, average margin +66 points |
+| Expert with memory and team play vs the previous Expert (480 games) | 59.3% of decided games, average margin +79 points |
+| Smart + team play vs Smart (2,400 games) | 55.1% of decided games, average margin +51 points |
 
 Switching features off one at a time showed that edge-only sets are worth about 5.5 points of win rate and keeping wildcards for pure melds about 4.
 A learned value-function player (trained by self-play on 450,000 positions) was also tried and played worse than the hand-built rules, so it was dropped.

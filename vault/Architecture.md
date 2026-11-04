@@ -14,4 +14,7 @@ Static site, no build step. `index.html`, `css/style.css`, `js/engine.js` (rules
 Network-first. **Bump the `CACHE` name in `sw.js` on every release** (now `limpa-v11`); `index.html` reloads once on update. Stale caches caused "it's still the same" reports before.
 
 ## Tests (`test/`)
-`engine-smoke.js` (cards conserved, games end), `bot-eval.js` (parallel head-to-head, reports win rate, how games end, pure vs impure meld counts), `bot-tune.js`, `online-rooms.js` (two real browsers over the PeerJS broker, 28 checks).
+`engine-smoke.js` (cards conserved, games end), `bot-eval.js` (parallel head-to-head, reports win rate, how games end, pure vs impure meld counts, pile cards taken per side), `bot-tune.js`, `bot-memory.js` (table memory is exact; hand reading never peeks), `pickup-ui.js` (browser: taking the pile, the glowing card, refusals), `online-rooms.js` (two real browsers over the PeerJS broker, 28 checks).
+
+## Engine performance
+`clone()` is a structural copy that shares card objects and meld card lists (never edited in place; `claimDeck` makes new card objects). `apply()` snapshots only right before a meld (the only moves that can be refused after changing the state). Checked move-for-move identical to the old JSON copy on 84 seeded games; about 4x faster. **Never edit a card object or a meld's `slots`/`cards` array in place**, replace them.

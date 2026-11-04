@@ -19,6 +19,7 @@ jobs:
         with:
           node-version: 22
       - run: node test/engine-smoke.js 100
+      - run: node test/bot-memory.js
   deploy:
     needs: test
     runs-on: ubuntu-latest
