@@ -408,17 +408,20 @@
     return out;
   }
 
-  function afterMeld(state, seat, events) {
+  // mustName: set when this move used a picked-up top card, so the advice can't say "discard" (not allowed yet)
+  function afterMeld(state, seat, events, mustName) {
     const team = teamOf(seat); const t = state.teams[team];
     const n = state.seats[seat].hand.length;
+    const why = () => goOutBlockers(state, team).join(', ');
+    const pileTip = () => ' Keep at least 2 cards: add the ' + mustName + ' to one of your melds, or tap Return.';
     if (n === 0) {
       if (t.deckStatus === 'unclaimed') { claimDeck(state, seat, events, true); return { ok: true }; }
       if (canGoOut(state, team)) { scoreMelds(state, team, events); finish(state, events, 'out', seat); return { ok: true }; }
-      return { ok: false, error: "You can't empty your hand yet (" + goOutBlockers(state, team).join(', ') + '). Keep a card and discard instead.' };
+      return { ok: false, error: "You can't empty your hand yet (" + why() + ').' + (mustName ? pileTip() : ' Keep a card and discard instead.') };
     }
     if (n === 1 && t.deckStatus !== 'unclaimed' && !canGoOut(state, team) && !state.finalTurn) {
-      return { ok: false, error: 'That would leave one card and then an empty hand, but your team cannot go out yet (' +
-        goOutBlockers(state, team).join(', ') + '). Discard instead.' };
+      return { ok: false, error: (mustName ? "Your team can't go out yet (" + why() + ').' + pileTip()
+        : 'That would leave one card and then an empty hand, but your team cannot go out yet (' + why() + '). Discard instead.') };
     }
     return { ok: true };
   }
@@ -486,10 +489,11 @@
         const m = Object.assign({ id: 'm' + state.nextMeldId++, team, scored: null, points: 0 }, v.meld);
         delete m.pure;
         T.melds.push(m);
+        const mustName = state.mustUse ? cardName(cards.find((c) => c.id === state.mustUse)) : null;
         me.hand = me.hand.filter((c) => !ids.includes(c.id));
         markDeckUse(state, seat, cards);
         state.mustUse = null;
-        const r = afterMeld(state, seat, events);
+        const r = afterMeld(state, seat, events, mustName);
         if (!r.ok) return fail(r.error);
         log(state, events, me.name + ' started a new ' + (m.type === 'seq' ? SUIT_SYM[m.suit] + ' sequence' : 'set of ' + rankTxt(m.rank) + 's') + '.');
         return { ok: true, events, meldId: m.id };
@@ -507,10 +511,11 @@
         if (breaksPure(m, v) && !action.confirmImpure)
           return fail('This wildcard will make your pure meld impure (200 → 100 at the end of your turn).', 'confirmImpure');
         if (m.type === 'seq') m.slots = v.slots; else m.cards = v.cards;
+        const mustName = state.mustUse ? cardName(cards.find((c) => c.id === state.mustUse)) : null;
         me.hand = me.hand.filter((c) => !ids.includes(c.id));
         markDeckUse(state, seat, cards);
         state.mustUse = null;
-        const r = afterMeld(state, seat, events);
+        const r = afterMeld(state, seat, events, mustName);
         if (!r.ok) return fail(r.error);
         log(state, events, me.name + ' added ' + cards.map(cardName).join(' ') + ' to a meld.');
         if (isTimpa(m)) log(state, events, 'TIMPA! The ' + SUIT_SYM[m.suit] + ' sequence is complete and locked.', 'good');

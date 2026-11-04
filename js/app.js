@@ -232,13 +232,21 @@ function act(action, quiet) {
 }
 
 function addToMeld(meldId, cardIds, wildPos, confirmImpure) {
-  const action = { type:'addToMeld', meldId, cardIds, wildPos, confirmImpure };
+  const action = { type:'addToMeld', meldId, cardIds: withMust(cardIds), wildPos, confirmImpure };
   const r = act(action, true);
   if (r.ok) return r;
   if (r.code === 'confirmImpure') { UI.modal = { type:'confirmImpure', action }; render(); return r; }
-  Sound.play('error'); toast(r.error, 'err'); UI.shake = '#meld-' + meldId; render();
+  Sound.play('error'); toast(r.error, 'err'); UI.shake = '#meld-' + meldId; mustTip(); render();
   return r;
 }
+// While a picked-up top card still has to be used, it is part of every meld you make (it can't be left out by mistake).
+function withMust(ids) {
+  const G = UI.G, m = G && G.mustUse;
+  if (!m || G.phase !== 'play' || G.turn !== UI.viewer || ids.includes(m) || !G.seats[UI.viewer].hand.some((c) => c.id === m)) return ids;
+  return [m].concat(ids);
+}
+// After a refused move while the top card is waiting, light up a move that does work (or Return).
+function mustTip() { const G = UI.G; if (G && G.mustUse && G.turn === UI.viewer) UI.helpShown = true; }
 
 function after(r, seat, prevTurnNo, actType) {
   afterLocal(r, seat, prevTurnNo, actType);
@@ -1013,7 +1021,8 @@ function renderGame() {
   let newValid = false;
   if (playPhase && selCards.length >= 3) {
     const sets = G.teams[myTeam].melds.filter((m)=>m.type==='set').length;
-    newValid = E.checkNewMeld(selCards, sets).ok;
+    newValid = E.checkNewMeld(selCards, sets).ok
+      && E.apply(JSON.parse(JSON.stringify(G)), viewer, { type: 'newMeld', cardIds: withMust(selIds) }).ok;   // green only if the rules will accept it
   }
   const on = playPhase;
   const thrower = selCards.length === 1 ? E.cardName(selCards[0]) : '';
@@ -1324,6 +1333,7 @@ app.addEventListener('click', (e) => {
     case 'sel': {
       if (G && G.turn !== UI.viewer) toast("It isn't your turn yet.");
       const id = el.dataset.id;
+      if (G && G.mustUse === id && G.turn === UI.viewer && UI.sel.has(id)) { toast('The glowing card stays selected: it has to be used first.'); render(); break; }
       if (UI.sel.has(id)) UI.sel.delete(id); else UI.sel.add(id);
       UI.helpShown = UI.helpShown && false;
       render(); break;
@@ -1334,8 +1344,8 @@ app.addEventListener('click', (e) => {
     case 'returnPile': act({ type:'returnPile' }); break;
     case 'endGame': act({ type:'endGame' }); break;
     case 'newMeld': {                       // wildcards are placed automatically (no question asked)
-      const r = act({ type:'newMeld', cardIds: [...UI.sel] });
-      if (!r.ok) { UI.shake = '#newBtn'; render(); }
+      const r = act({ type:'newMeld', cardIds: withMust([...UI.sel]) });
+      if (!r.ok) { UI.shake = '#newBtn'; mustTip(); render(); }
       break;
     }
     case 'discard': act({ type:'discard', cardId:[...UI.sel][0] }); break;
