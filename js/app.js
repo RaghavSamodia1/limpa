@@ -146,7 +146,7 @@ function newLobby() {
 
 function startGame() {
   const L = UI.lobby;
-  clearTimeout(UI.botTimer); UI.botTimer = null;
+  stopBot();
   UI.G = E.createGame({ gameId:L.gameId, teamNames:L.teamNames, seats:L.seats.map((s)=>({...s, level:L.level})) });
   UI.screen = 'game'; UI.tilt = TILT0; UI.sel.clear(); UI.order = {}; UI.modal = null; UI.cover = null;
   UI.deadline = null; UI.deadlineKey = null; resetDeckSeen();
@@ -201,20 +201,48 @@ function armTimer() {
   UI.deadlineKey = key; UI.deadline = Date.now() + E.CFG.drawSeconds * 1000;
 }
 
+/* Computer players think in a background thread (bot-worker.js) when the page comes from the web, so the Expert can
+   take its time without freezing anything. Opened as a local file, or if the browser refuses the thread, they think
+   here with the engine's shorter default. */
+const BOT_THINK_MS = 1500;
+const Brain = (() => {
+  let w = null, seq = 0; const waiting = new Map();
+  try {
+    if (typeof Worker === 'function' && /^https?:$/.test(location.protocol)) {
+      w = new Worker('js/bot-worker.js');
+      w.onmessage = (e) => { const cb = waiting.get(e.data.id); waiting.delete(e.data.id); if (cb) cb(e.data); };
+      w.onerror = (e) => { if (e && e.preventDefault) e.preventDefault(); w = null; const cbs = [...waiting.values()]; waiting.clear(); cbs.forEach((cb) => cb(null)); };
+    }
+  } catch (e) { w = null; }
+  return {
+    think(G, seat, done) {
+      if (w) { const id = ++seq; waiting.set(id, done); try { w.postMessage({ id, state: G, seat, thinkMs: BOT_THINK_MS }); return; } catch (e) { waiting.delete(id); } }
+      let action = null; try { action = E.botNextAction(G, seat); } catch (e) {}
+      done({ action, plan: G.finishPlan });
+    },
+  };
+})();
+function stopBot() { clearTimeout(UI.botTimer); UI.botTimer = null; UI.botJob = null; }   // cancels a pending computer move, thinking or not
 function scheduleBot() {
   const G = UI.G;
-  if (!G || G.phase === 'over' || UI.botTimer || UI.spinning || isGuest()) return;   // only the host (or a local game) plays for computers
+  if (!G || G.phase === 'over' || UI.botTimer || UI.botJob || UI.spinning || isGuest()) return;   // only the host (or a local game) plays for computers
   if (!G.seats[G.turn].bot) return;
-  UI.botTimer = setTimeout(() => {
-    UI.botTimer = null;
-    if (!UI.G || UI.G !== G || G.phase === 'over' || !G.seats[G.turn].bot) return;
-    const seat = G.turn;
-    const prevTurn = G.turnNo;
-    const act = E.botNextAction(G, seat);
-    let r = E.apply(G, seat, act);
+  const seat = G.turn, turnNo = G.turnNo, phase = G.phase, n = G.seats[seat].hand.length;
+  const job = UI.botJob = { result: null, waited: false };
+  // the move is played once the computer has finished thinking and the usual pause has passed, whichever is later
+  const go = () => {
+    if (UI.botJob !== job || !job.result || !job.waited) return;
+    UI.botJob = null;
+    if (UI.G !== G || G.phase === 'over' || G.turn !== seat || G.turnNo !== turnNo || G.phase !== phase || G.seats[seat].hand.length !== n || !G.seats[seat].bot) { scheduleBot(); return; }
+    if (job.result.plan !== undefined) G.finishPlan = job.result.plan || undefined;
+    let a = job.result.action;
+    if (!a) { try { a = E.botNextAction(G, seat); } catch (e) { a = null; } }      // the background thread failed: think here
+    let r = a ? E.apply(G, seat, a) : { ok: false };
     if (!r.ok) r = E.apply(G, seat, { type: G.phase === 'draw' ? 'timeout' : 'discard', cardId: G.seats[seat].hand[0] && G.seats[seat].hand[0].id });
-    after(r, seat, prevTurn, act && act.type);
-  }, setting.slow() ? 1400 : 560);
+    after(r, seat, turnNo, a && a.type);
+  };
+  UI.botTimer = setTimeout(() => { UI.botTimer = null; job.waited = true; go(); }, setting.slow() ? 1400 : 560);
+  Brain.think(G, seat, (res) => { job.result = res || { action: null }; go(); });
 }
 
 function act(action, quiet) {
@@ -408,7 +436,7 @@ function hostHello(key, m) {
     Object.assign(st, { name, avatar, bot: false, away: null, takenOver: false });
     if (was) toast(name + ' is back', 'good');
     publishState({ seat: -1, type: 'presence' }, []);
-    if (G.turn !== UI.viewer) { clearTimeout(UI.botTimer); UI.botTimer = null; }
+    if (G.turn !== UI.viewer) { stopBot(); }
   } else { toast(name + ' joined', 'good'); broadcastLobby(); }
   Sound.play('turn', true); render();
 }
@@ -453,7 +481,7 @@ function publishState(actor, events) {
 function startOnlineGame() {
   const L = UI.lobby;
   if (L.seats.some((s) => !s.bot && !s.joined)) { toast('Still waiting for everyone to join.', 'err'); return; }
-  clearTimeout(UI.botTimer); UI.botTimer = null;
+  stopBot();
   UI.G = E.createGame({ gameId: L.gameId, teamNames: L.teamNames, seats: L.seats.map((s) => ({ name: s.name, avatar: s.avatar, bot: !!s.bot, level: L.level })) });
   UI.screen = 'game'; UI.tilt = TILT0; UI.sel.clear(); UI.order = {}; UI.modal = null; UI.cover = null; UI.deadline = null; UI.deadlineKey = null;
   UI.viewer = 0; UI.spinning = false; UI.dealing = true; setTimeout(() => { UI.dealing = false; }, 1600); resetDeckSeen();
@@ -569,7 +597,7 @@ function leaveRoom(msg, silent) {
     const tr = N.tr; setTimeout(() => { try { tr && tr.close(); } catch (e) {} }, 400);
   }
   UI.net = null; UI.G = null; UI.modal = null; UI.cover = null; UI.screen = 'menu'; UI.lobby = null;
-  clearTimeout(UI.botTimer); UI.botTimer = null;
+  stopBot();
   render(); if (msg) toast(msg, silent ? 'err' : 'good');
 }
 function shareRoom() {
@@ -779,25 +807,26 @@ function playFlights(before) {
 }
 const hideFlying = () => FLY.forEach((_, cid) => app.querySelectorAll(`[data-cid="${cid}"]`).forEach((e) => { e.style.visibility = 'hidden'; }));
 
-// Shrinks a team's meld cards until all of its melds fit on the mat without scrolling.
+// Sizes each team's meld cards to fill its mat: shrinks them until all melds fit without scrolling, or grows them
+// (up to 1.45x) into spare room. A binary search, so it measures the layout about 9 times instead of up to 50.
 function fitMelds() {
   let worst = 1;
   app.querySelectorAll('.zone').forEach((zone) => {
     const melds = zone.querySelector('.melds'), first = melds && melds.querySelector('.tc');
     if (!first || !zone.offsetParent) return;                 // nothing to fit while a mat is hidden
-    const mw0 = first.offsetWidth; let mw = mw0;
-    if (zone.scrollHeight <= zone.clientHeight + 1) {            // lots of room: let the melds grow to use it
-      for (let i = 0; i < 14; i++) {
-        const nx = mw * 1.04; melds.style.setProperty('--mw', nx.toFixed(1) + 'px');
-        if (zone.scrollHeight > zone.clientHeight + 1 || nx > mw0 * 1.45) { melds.style.setProperty('--mw', mw.toFixed(1) + 'px'); break; }
-        mw = nx;
-      }
-      worst = Math.max(worst, mw / mw0 > 1 ? 1 : worst); return;
+    const mw0 = first.offsetWidth;
+    const fits = (mw) => { melds.style.setProperty('--mw', mw.toFixed(1) + 'px'); return zone.scrollHeight <= zone.clientHeight + 1; };
+    let lo, hi;
+    if (fits(mw0)) {                                           // room to spare: grow into it
+      if (fits(mw0 * 1.45)) return;
+      lo = mw0; hi = mw0 * 1.45;
+    } else {
+      if (!fits(20)) { melds.style.setProperty('--mw', '20px'); worst = Math.min(worst, 20 / mw0); return; }
+      lo = 20; hi = mw0;
     }
-    for (let i = 0; i < 50 && zone.scrollHeight > zone.clientHeight + 1 && mw > 20; i++) {
-      mw *= .975; melds.style.setProperty('--mw', mw.toFixed(1) + 'px');
-    }
-    worst = Math.min(worst, mw / mw0);
+    for (let i = 0; i < 7; i++) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid; }
+    melds.style.setProperty('--mw', lo.toFixed(1) + 'px');
+    worst = Math.min(worst, lo / mw0);
   });
   return worst;
 }
@@ -1328,7 +1357,7 @@ app.addEventListener('click', (e) => {
       render(); onTurnChange(); render(); break;
     }
     case 'redeal': case 'again': UI.modal = null; if (isHost()) startOnlineGame(); else startGame(); break;
-    case 'quit': if (UI.net) { leaveRoom(); break; } clearTimeout(UI.botTimer); UI.botTimer = null; UI.G = null; UI.modal = null; UI.cover = null; UI.screen = 'menu'; render(); break;
+    case 'quit': if (UI.net) { leaveRoom(); break; } stopBot(); UI.G = null; UI.modal = null; UI.cover = null; UI.screen = 'menu'; render(); break;
     case 'reveal': UI.viewer = UI.cover; UI.cover = null; armTimer(); render(); break;
     case 'sel': {
       if (G && G.turn !== UI.viewer) toast("It isn't your turn yet.");
@@ -1486,7 +1515,7 @@ function dropTarget(x, y) {
   return null;
 }
 
-window.__limpa = { UI, E, render, after, addToMeld, act, NETCFG, ROOM_RE };
+window.__limpa = { UI, E, render, after, addToMeld, act, NETCFG, ROOM_RE, scheduleBot };
 { const m = /[#&]room=([0-9A-Za-z-]+)/.exec(location.hash || '');
   if (m) { UI.joinCode = normCode(m[1]); UI.screen = 'join'; try { history.replaceState(null, '', location.href.split('#')[0]); } catch (e) {} } }
 render();

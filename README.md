@@ -62,7 +62,8 @@ section differs. There are three levels, chosen in the lobby (Expert is the defa
 - **Expert** is Smart plus table memory, team play and lookahead.
   - *Memory:* it remembers what everyone saw: which pile cards each player took, which top cards they passed on, what they threw, and which cards would extend their melds that they still haven't played. From that it estimates the chance that each other player (opponents and partner) holds each card. Only public information is used; a test checks it never peeks.
   - *Team play:* it avoids throwing a card the next player (always an opponent) is likely to use to take the whole pile, more so the bigger the pile, and won't hand the other team the card that finishes one of their 6-card melds. Cards its partner is known to hold count as help for the team's melds, cards an opponent probably holds don't. While its team's extra deck is unclaimed it looks for a way to empty the hand and claim it.
-  - *Lookahead:* for each card it might throw, it deals out everything it cannot see in plausible ways (cards seen going into a hand stay there, the rest follow the estimates), plays each game out to the end, and throws the card that wins most often. It thinks for about 0.3 seconds per throw.
+  - *Lookahead:* for each card it might throw, it deals out everything it cannot see in plausible ways (cards seen going into a hand stay there, the rest follow the estimates, and every hand and the centre stack keep their exact sizes), plays each game out to the end, and throws the card that wins most often. It thinks for about 1.5 seconds per throw in a background thread, so the screen never freezes; a faster phone simply imagines more games.
+  - Every computer player keeps its own memory and reads only that.
 
 Measured with `node test/bot-eval.js` (sides swapped every game; "decisive" ignores draws):
 
@@ -73,6 +74,7 @@ Measured with `node test/bot-eval.js` (sides swapped every game; "decisive" igno
 | Expert vs Smart (400 games) | 60.7% of decided games, average margin +66 points |
 | Expert with memory and team play vs the previous Expert (480 games) | 59.3% of decided games, average margin +79 points |
 | Smart + team play vs Smart (2,400 games) | 55.1% of decided games, average margin +51 points |
+| Expert thinking longer (20 imagined deals per throw) vs 6 deals (240 games) | 58.1% of decided games, average margin +53 points |
 
 Switching features off one at a time showed that edge-only sets are worth about 5.5 points of win rate and keeping wildcards for pure melds about 4.
 A learned value-function player (trained by self-play on 450,000 positions) was also tried and played worse than the hand-built rules, so it was dropped.

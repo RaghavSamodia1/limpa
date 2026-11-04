@@ -7,5 +7,5 @@
 6. Under-hand empty strip on Raghav's phone: reduced, not reproduced; verify on device.
 7. Portrait vs landscape; screen-reader support for the table.
 8. Refresh the Claude artifact preview (very old build).
-9. Expert thinking runs on the main thread (about 300 ms per throw). Moving bots to a Web Worker would allow a longer, smoother think.
+9. Done: Expert thinks in a Web Worker (1.5 s). A longer think (or using it for pickup decisions) could be tested again.
 10. Hidden-information hygiene for online play: card ids name the card (fixed at deal time). Redaction now drops a bot's plan and other players' last drawn card id; a full audit of what guests receive is still worth doing.
