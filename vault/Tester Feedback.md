@@ -12,4 +12,7 @@
 | - | Funny default names (Chunnu, Munnu, Tunnu) | Done |
 | 9 | Throw jumps to pile and needs reselecting | Done |
 | - | 3-player version | **Not started** |
+Raghav, 4 Nov 2026: "I should be able to use the top card from the pile with a card in my hand, this error is wrong" (screenshot: hand 7♠ 6♠ 4♠ + Joker from the pile, toast "First use the top card from the discard pile"). Cause: tapping the glowing card deselected it, so the meld went in without it. Fixed: it stays selected and is always included; refusals explain the empty-hand rule and light up a legal move. Note that in that exact position melding all four, or three (leaving one card), is still refused by the rules: Bhujia had no pure meld, so the hand can't be emptied. The Joker could go onto an existing meld.
+Raghav, 4 Nov 2026: Expert should play as a team, remember pile pickups and passes, read likely hands, and stop opponents completing melds. See [[Computer Players]].
+Raghav, 4 Nov 2026: "computer need not be this fast; each computer player should have his own memory; track how many cards are in the draw pile and other hands and gauge how it affects the game". Done: longer think in a background thread (+58% decisive vs the quick think), per-player memories, counts documented and four count rules tested (none helped). See [[Computer Players]].
 Other reports: "joining a room takes too much time" (fixed by progress and retries, root cause unknown), "expert computer stalls for impure melds" (PR 11), "everything smaller" (reverted to per-stage views).

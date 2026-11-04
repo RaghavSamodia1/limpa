@@ -30,7 +30,17 @@
   const cardName = (c) => (c.s === 'J' ? 'Joker' : rankTxt(c.r) + SUIT_SYM[c.s]);
   const isWildType = (c) => c.s === 'J' || c.r === 2;
   const teamOf = (seat) => seat % 2;
-  const clone = (o) => JSON.parse(JSON.stringify(o));
+  const jclone = (o) => JSON.parse(JSON.stringify(o));
+  // Copy of a game state. Card objects and the card lists inside melds are never edited in place (they are replaced),
+  // so they are shared; every container that does get edited in place is copied. Much faster than a JSON round trip.
+  function clone(st) {
+    if (!st || !st.seats || !st.teams) return jclone(st);
+    const s = Object.assign({}, st);
+    s.seats = st.seats.map((p) => Object.assign({}, p, { hand: p.hand.slice() }));
+    s.teams = st.teams.map((t) => Object.assign({}, t, { deck: t.deck.slice(), penalties: t.penalties.slice(), melds: t.melds.map((m) => Object.assign({}, m)) }));
+    s.stack = st.stack.slice(); s.discard = st.discard.slice(); s.log = st.log.slice();
+    return s;                                         // state.minds is copy-on-write (see witness), so it is shared
+  }
 
   function shuffle(a) {
     for (let i = a.length - 1; i > 0; i--) {
@@ -267,6 +277,7 @@
       mustUse: null, pileBackup: null, drewFrom: null, pileRefused: false,
       finalTurn: false, nextMeldId: 1, log: [], result: null,
     };
+    mindsOf(state);
     startTurn(state, state.turn, []);
     return state;
   }
@@ -354,7 +365,7 @@
 
   function claimDeck(state, seat, events, sameTurn) {
     const team = teamOf(seat); const t = state.teams[team];
-    const cards = t.deck.map((c) => Object.assign(c, { x: team }));
+    const cards = t.deck.map((c) => Object.assign({}, c, { x: team }));
     state.seats[seat].hand.push(...cards);
     t.deck = []; t.deckStatus = 'claimed';
     log(state, events, state.seats[seat].name + ' claimed ' + t.name + "'s extra deck" +
@@ -408,17 +419,20 @@
     return out;
   }
 
-  function afterMeld(state, seat, events) {
+  // mustName: set when this move used a picked-up top card, so the advice can't say "discard" (not allowed yet)
+  function afterMeld(state, seat, events, mustName) {
     const team = teamOf(seat); const t = state.teams[team];
     const n = state.seats[seat].hand.length;
+    const why = () => goOutBlockers(state, team).join(', ');
+    const pileTip = () => ' Keep at least 2 cards: add the ' + mustName + ' to one of your melds, or tap Return.';
     if (n === 0) {
       if (t.deckStatus === 'unclaimed') { claimDeck(state, seat, events, true); return { ok: true }; }
       if (canGoOut(state, team)) { scoreMelds(state, team, events); finish(state, events, 'out', seat); return { ok: true }; }
-      return { ok: false, error: "You can't empty your hand yet (" + goOutBlockers(state, team).join(', ') + '). Keep a card and discard instead.' };
+      return { ok: false, error: "You can't empty your hand yet (" + why() + ').' + (mustName ? pileTip() : ' Keep a card and discard instead.') };
     }
     if (n === 1 && t.deckStatus !== 'unclaimed' && !canGoOut(state, team) && !state.finalTurn) {
-      return { ok: false, error: 'That would leave one card and then an empty hand, but your team cannot go out yet (' +
-        goOutBlockers(state, team).join(', ') + '). Discard instead.' };
+      return { ok: false, error: (mustName ? "Your team can't go out yet (" + why() + ').' + pileTip()
+        : 'That would leave one card and then an empty hand, but your team cannot go out yet (' + why() + '). Discard instead.') };
     }
     return { ok: true };
   }
@@ -428,17 +442,41 @@
     if (cards.some((c) => c.x === team)) state.teams[team].deckUsed = true;
   }
 
+  /* ---------------- Memories ----------------
+     Every player has their own memory (state.minds[seat]) of what they saw happen at the table. A computer player reads
+     only its own. Everyone sees the same table, so what they note down is the same public play:
+     known    - for each player, cards seen going into their hand with the face-up pile (dropped when melded or thrown)
+     passed   - top cards each player chose not to take (drew from the centre instead, or returned the pile)
+     threw    - cards each player threw
+     took     - how many times each player took the pile
+     lastPlay - the turn of each player's latest meld/throw step (to read "they would have added that by now")
+     Memories are copy-on-write: an update replaces the lists it changes, so copies of a game can share them. */
+  const ctype = (c) => (c.s === 'J' ? 'J' : c.s + c.r);
+  const newMind = () => ({ known: [[], [], [], []], passed: [[], [], [], []], threw: [[], [], [], []], took: [0, 0, 0, 0], lastPlay: [-1, -1, -1, -1] });
+  function mindsOf(state) { if (!state.minds) state.minds = [0, 1, 2, 3].map(newMind); return state.minds; }
+  const mindOf = (state, seat) => mindsOf(state)[seat];
+  // Everyone at the table watches player p do something; each writes it into their own memory.
+  function witness(state, p, changes) {
+    state.minds = mindsOf(state).map((m) => {
+      if (!m) return m;                               // a phone in an online game only holds its own player's memory
+      const n = Object.assign({}, m);
+      for (const f in changes) n[f] = m[f].map((x, i) => (i === p ? changes[f](x) : x));
+      return n;
+    });
+  }
+  const noted = (c, t, max) => (list) => list.concat([{ k: ctype(c), s: c.s, r: c.r, t }]).slice(-max);
+  const dropIds = (ids) => (list) => list.filter((x) => !ids.includes(x.id));
+
   /* ---------------- apply() ---------------- */
   function apply(state, seat, action) {
     const events = [];
     if (!action || !action.type) return { ok: false, error: 'Unknown action.', events };
     if (state.phase === 'over') return { ok: false, error: 'The game is over.', events };
     if (seat !== state.turn) return { ok: false, error: "It isn't your turn.", events };
-    const snap = JSON.stringify(state);
+    let snap = null;                                  // taken just before a change that may still be refused
+    const save = () => { snap = clone(state); };
     const fail = (error, code) => {
-      const restored = JSON.parse(snap);
-      Object.keys(state).forEach((k) => delete state[k]);
-      Object.assign(state, restored);
+      if (snap) { Object.keys(state).forEach((k) => delete state[k]); Object.assign(state, snap); }
       return { ok: false, error, code, events: [] };
     };
     const me = state.seats[seat]; const team = teamOf(seat); const T = state.teams[team];
@@ -447,6 +485,9 @@
       case 'draw': {
         if (state.phase !== 'draw') return fail('You have already drawn this turn.');
         if (!state.stack.length) return fail('The centre stack is empty. Pick up the discard pile or end the game.');
+        const t0 = state.turnNo;
+        witness(state, seat, Object.assign({ lastPlay: () => t0 },
+          state.discard.length && !state.pileRefused ? { passed: noted(state.discard[state.discard.length - 1], t0, 10) } : {}));
         const c = state.stack.pop(); me.hand.push(c);
         state.phase = 'play'; state.drewFrom = 'stack'; state.lastDrawn = c.id;
         log(state, events, me.name + ' drew from the centre.');
@@ -459,6 +500,8 @@
         if (state.pileRefused) return fail('You already returned the pile this turn. Draw from the centre.');
         const top = state.discard[state.discard.length - 1];
         state.pileBackup = state.discard.map((c) => c.id);
+        const seenPile = state.discard.map((c) => ({ id: c.id, k: ctype(c) })), t0 = state.turnNo;
+        witness(state, seat, { known: (l) => l.concat(seenPile), took: (n) => n + 1, lastPlay: () => t0 });
         me.hand.push(...state.discard); state.discard = [];
         state.mustUse = top.id; state.phase = 'play'; state.drewFrom = 'pile';
         log(state, events, me.name + ' picked up the discard pile (' + state.pileBackup.length + ' cards).');
@@ -468,6 +511,7 @@
         if (state.drewFrom !== 'pile' || !state.mustUse) return fail('Nothing to return.');
         const back = state.pileBackup.map((id) => me.hand.find((c) => c.id === id));
         me.hand = me.hand.filter((c) => !state.pileBackup.includes(c.id));
+        witness(state, seat, { known: dropIds(state.pileBackup), took: (n) => n - 1, passed: noted(back[back.length - 1], state.turnNo, 10) });   // looked, and could not use it
         state.discard = back; state.mustUse = null; state.pileBackup = null;
         state.drewFrom = null; state.phase = 'draw'; state.pileRefused = true;
         log(state, events, me.name + " couldn't use the top card and returned the pile.", 'warn');
@@ -483,13 +527,16 @@
         const sets = T.melds.filter((m) => m.type === 'set').length;
         const v = checkNewMeld(cards, sets, action.choice);
         if (!v.ok) return fail(v.error);
-        const m = Object.assign({ id: 'm' + state.nextMeldId++, team, scored: null, points: 0 }, v.meld);
+        save();
+        const m = Object.assign({ id: 'm' + state.nextMeldId++, team, scored: null, points: 0, lt: state.turnNo }, v.meld);
         delete m.pure;
         T.melds.push(m);
+        const mustName = state.mustUse ? cardName(cards.find((c) => c.id === state.mustUse)) : null;
         me.hand = me.hand.filter((c) => !ids.includes(c.id));
+        witness(state, seat, { known: dropIds(ids) });
         markDeckUse(state, seat, cards);
         state.mustUse = null;
-        const r = afterMeld(state, seat, events);
+        const r = afterMeld(state, seat, events, mustName);
         if (!r.ok) return fail(r.error);
         log(state, events, me.name + ' started a new ' + (m.type === 'seq' ? SUIT_SYM[m.suit] + ' sequence' : 'set of ' + rankTxt(m.rank) + 's') + '.');
         return { ok: true, events, meldId: m.id };
@@ -506,11 +553,14 @@
         if (!v.ok) return fail(v.error);
         if (breaksPure(m, v) && !action.confirmImpure)
           return fail('This wildcard will make your pure meld impure (200 → 100 at the end of your turn).', 'confirmImpure');
+        save();                                       // the snapshot holds its own copy of every meld
         if (m.type === 'seq') m.slots = v.slots; else m.cards = v.cards;
+        m.lt = state.turnNo; witness(state, seat, { known: dropIds(ids) });
+        const mustName = state.mustUse ? cardName(cards.find((c) => c.id === state.mustUse)) : null;
         me.hand = me.hand.filter((c) => !ids.includes(c.id));
         markDeckUse(state, seat, cards);
         state.mustUse = null;
-        const r = afterMeld(state, seat, events);
+        const r = afterMeld(state, seat, events, mustName);
         if (!r.ok) return fail(r.error);
         log(state, events, me.name + ' added ' + cards.map(cardName).join(' ') + ' to a meld.');
         if (isTimpa(m)) log(state, events, 'TIMPA! The ' + SUIT_SYM[m.suit] + ' sequence is complete and locked.', 'good');
@@ -523,8 +573,11 @@
         if (state.mustUse) return fail('First use the top card from the discard pile (or return the pile).');
         const i = me.hand.findIndex((c) => c.id === action.cardId);
         if (i < 0) return fail('That card is not in your hand.');
+        if (me.hand.length === 1 && !state.finalTurn && T.deckStatus !== 'unclaimed' && !canGoOut(state, team))
+          return fail("You can't empty your hand yet (" + goOutBlockers(state, team).join(', ') + ').');
         const c = me.hand.splice(i, 1)[0];
         state.discard.push(c);
+        witness(state, seat, { known: dropIds([c.id]), threw: noted(c, state.turnNo, 14) });
         log(state, events, me.name + ' discarded ' + cardName(c) + '.');
         if (state.finalTurn) { scoreMelds(state, team, events); finish(state, events, 'stack'); return { ok: true, events }; }
         if (me.hand.length === 0) {
@@ -549,6 +602,7 @@
         const c = state.stack.pop(); me.hand.push(c); state.phase = 'play'; state.drewFrom = 'stack';
         checkStackEmpty(state, events);
         me.hand = me.hand.filter((x) => x.id !== c.id); state.discard.push(c);
+        witness(state, seat, { threw: noted(c, state.turnNo, 14) });
         endTurn(state, events);
         return { ok: true, events };
       }
@@ -562,6 +616,9 @@
     s.seats.forEach((p, i) => { if (i !== seat) { p.handCount = p.hand.length; p.hand = []; } });
     s.stackCount = s.stack.length; s.stack = [];
     s.teams.forEach((t) => { t.deckCount = t.deck.length; t.deck = []; });
+    delete s.finishPlan;                                  // a computer player's private plan (card ids of its hand)
+    if (s.minds) s.minds = s.minds.map((m, i) => (i === seat ? m : null));   // each phone gets only its own player's memory
+    if (s.turn !== seat) delete s.lastDrawn;              // card ids name the card, so only the drawer may see this one
     return s;
   }
 
@@ -772,11 +829,16 @@
     addBase: 50, addLenW: 6, newBase: 60, newLenW: 12, wildNewBase: 28, completeW: 90, pureW: 80, pickTier: 6,
     // expert play: sets only from edge ranks (A K Q J 3 4) until the game is nearly over, card counting for outs,
     // and keeping a wildcard back while the natural card that would finish a pure meld is still likely to come
-    pureFirst: 1, pureU: .95, pureNewU: .6, pureLive: 1, finish: 1, outMaxHand: 9, outBudget: 400, outBranch: 7, outDepth: 5, rollouts: 0, rollMs: 0, rollCands: 4, expertMs: 300, setMode: 1, midSetU: .85, midSetHand: 3, setKeepRuns: 1, outsW: 9, setOutsW: 4, dangerGapW: 10, waitLive: 2, waitU: .55,
+    pureFirst: 1, pureU: .95, pureNewU: .6, pureLive: 1, finish: 1, outMaxHand: 9, outBudget: 400, outBranch: 7, outDepth: 5, team: 0, claim: 0, rollMarginW: .0004, dangerUse: 45, dangerPile: .4, dangerDone: 30, infMeld: .15, infPass: .75, infThrow: .55, infAge: 16, rollouts: 0, rollMs: 0, rollCands: 4, expertMs: 300, setMode: 1, midSetU: .85, midSetHand: 3, setKeepRuns: 1, outsW: 9, setOutsW: 4, dangerGapW: 10, waitLive: 2, waitU: .55,
   };
   const smartParams = (state, seat) => {
     const P = Object.assign({}, CFG.smart, state.seats[seat].params || null);
-    if (state.seats[seat].level === 'expert' && !P.rollouts && !P.rollMs) P.rollMs = P.expertMs;       // the Expert level adds lookahead
+    if (state.seats[seat].level === 'expert') {                     // the Expert level adds lookahead, reads the table and plays for the team
+      if (!P.rollouts && !P.rollMs) P.rollMs = P.expertMs;
+      const own = state.seats[seat].params || {};
+      if (own.team === undefined) P.team = 1;
+      if (own.claim === undefined) P.claim = 1;
+    }
     return P;
   };
   const urgency = (state) => Math.max(0, Math.min(1, 1 - state.stack.length / 33));   // 0 at the start, 1 when the centre is empty
@@ -793,6 +855,107 @@
   const nbrs = (r) => r === 1 ? [[2, 1], [3, 2], [13, 1], [12, 2]] : r === 2 ? [[1, 1], [3, 1], [4, 2]] : r === 13 ? [[12, 1], [1, 1], [11, 2]] : r === 12 ? [[11, 1], [13, 1], [10, 2], [1, 2]]
     : [[r - 1, 1], [r + 1, 1], [r - 2, 2], [r + 2, 2]].filter((x) => x[0] >= 1 && x[0] <= 13);
   const edgeRank = (r) => goodSetRank(r) || r === 2;
+
+  /* Reading the other hands. For every other player: the cards everyone saw them pick up (certain), and for each card
+     nobody has seen, how likely it is to sit in their hand rather than in the centre stack, an extra deck or another hand.
+     Each player's share starts equal per hidden card and is lowered for cards their own play argues against:
+       - they would have added it: a natural card that extends one of their team's melds, after they have had a turn since
+       - they passed on a top card: cards that would have let them use it
+       - they threw a card: its close neighbours (players keep connected cards) */
+  const TYPES = (() => { const t = ['J']; for (const su of SUITS) for (let r = 1; r <= 13; r++) t.push(su + r); return t; })();
+  const typeTotal = (k) => (k === 'J' ? 4 : 2);
+  function beliefs(state, seat, P) {
+    P = P || CFG.smart;
+    const mem = mindOf(state, seat), turn = state.turnNo;          // this player's own memory, nobody else's
+    const seen = {}; const see = (k) => { seen[k] = (seen[k] || 0) + 1; };
+    state.seats[seat].hand.forEach((c) => see(ctype(c)));
+    state.discard.forEach((c) => see(ctype(c)));
+    state.teams.forEach((t) => t.melds.forEach((m) => meldCards(m).forEach((c) => see(ctype(c)))));
+    const seats = [0, 1, 2, 3].map((p) => {
+      if (p === seat) return null;
+      const known = {}; mem.known[p].forEach((x) => { known[x.k] = (known[x.k] || 0) + 1; see(x.k); });
+      const n = state.seats[p].hand.length;
+      return { n, known, unk: Math.max(0, n - mem.known[p].length), w: {} };
+    });
+    const mul = (b, k, f) => { b.w[k] = (b.w[k] === undefined ? 1 : b.w[k]) * f; };
+    for (let p = 0; p < 4; p++) {
+      const b = seats[p]; if (!b || !b.unk) continue;
+      // their team's melds: anything natural they held that fits would normally have been added already
+      if (b.n > 2) for (const m of state.teams[teamOf(p)].melds) {
+        if ((m.lt || 0) >= mem.lastPlay[p] || isClosed(m)) continue;
+        const suits = m.type === 'seq' ? [m.suit] : SUITS;
+        for (const su of suits) for (let r = 1; r <= 13; r++) {
+          if (r === 2 || (m.type === 'set' && r !== m.rank)) continue;
+          if (checkAdd(m, [{ id: '?', s: su, r }]).ok) mul(b, su + r, P.infMeld);
+        }
+      }
+      for (const e of mem.passed[p]) {
+        if (e.s === 'J' || e.r === 2 || turn - e.t > P.infAge) continue;
+        for (const [r2, d] of nbrs(e.r)) if (r2 !== 2) mul(b, e.s + r2, d === 1 ? P.infPass : (1 + P.infPass) / 2);
+        for (const su of SUITS) if (su !== e.s) mul(b, su + e.r, (1 + P.infPass) / 2);
+      }
+      for (const e of mem.threw[p]) {
+        if (e.s === 'J' || e.r === 2 || turn - e.t > P.infAge) continue;
+        for (const [r2, d] of nbrs(e.r)) if (r2 !== 2) mul(b, e.s + r2, d === 1 ? P.infThrow : (1 + P.infThrow) / 2);
+      }
+    }
+    const rest = state.stack.length + state.teams.reduce((a, t) => a + t.deck.length, 0);
+    const cache = {};
+    // share: chance that one particular unseen copy of k is in p's hand; u: unseen copies of k
+    const info = (p, k) => {
+      const key = p + k; if (cache[key]) return cache[key];
+      let den = rest; for (const q of seats) if (q) den += q.unk * (q.w[k] === undefined ? 1 : q.w[k]);
+      const b = seats[p], u = Math.max(0, typeTotal(k) - (seen[k] || 0));
+      const share = den > 0 && b ? b.unk * (b.w[k] === undefined ? 1 : b.w[k]) / den : 0;
+      return (cache[key] = { u, share });
+    };
+    return {
+      seats,
+      // probability that player p holds at least one card of type k ('J' or suit+rank, e.g. 'H7')
+      has(p, k) { const b = seats[p]; if (!b) return 0; if (b.known[k]) return 1; const i = info(p, k); return 1 - Math.pow(1 - i.share, i.u); },
+      // expected number of such cards in p's hand
+      count(p, k) { const b = seats[p]; if (!b) return 0; const i = info(p, k); return (b.known[k] || 0) + i.u * i.share; },
+      // probability p holds at least one wildcard (Joker or any 2)
+      wild(p) { let none = 1; for (const k of ['J', 'S2', 'H2', 'D2', 'C2']) none *= 1 - this.has(p, k); return 1 - none; },
+      // copies of k that can still help this player's team: not seen anywhere and not likely in an opponent's hand,
+      // plus the ones the partner is known to hold (the partner can add them to the team's melds)
+      free(k) {
+        const o1 = (seat + 1) % 4, o2 = (seat + 3) % 4, pa = (seat + 2) % 4;
+        const i1 = info(o1, k), i2 = info(o2, k);
+        return Math.max(0, i1.u * (1 - i1.share - i2.share)) + ((seats[pa] && seats[pa].known[k]) || 0);
+      },
+    };
+  }
+
+  // How likely player q can use card c as the top of the pile (and so take the whole pile): it fits one of q's team
+  // melds, or q holds cards that make a new meld with it.
+  function useChance(state, B, q, c) {
+    const T = state.teams[teamOf(q)];
+    if (T.melds.some((m) => checkAdd(m, [c]).ok)) return 1;
+    const has = (k) => B.has(q, k), pw = B.wild(q);
+    const sets = T.melds.filter((m) => m.type === 'set').length;
+    let none = 1;
+    if (isWildType(c)) {                                   // a wildcard joins any two natural cards of a run (or a pair)
+      for (const su of SUITS) for (let r = 1; r <= 13; r++) {
+        if (r === 2) continue; const a = has(su + r); if (a < .01) continue;
+        for (const d of [1, 2]) { let r2 = r + d; if (r2 === 14) r2 = 1; if (r2 > 13 || r2 === 2) continue; none *= 1 - a * has(su + r2); }
+      }
+      return 1 - none;
+    }
+    const s = c.s, nat = (x) => { if (x === 14) x = 1; return (x < 1 || x > 13 || x === 2) ? 0 : has(s + x); };
+    for (const pos of (c.r === 1 ? [1, 14] : [c.r])) {
+      for (const [a, b] of [[pos - 2, pos - 1], [pos - 1, pos + 1], [pos + 1, pos + 2]]) none *= 1 - nat(a) * nat(b);   // two naturals
+      let noNb = 1; for (const x of [pos - 2, pos - 1, pos + 1, pos + 2]) noNb *= 1 - nat(x);
+      none *= 1 - pw * (1 - noNb);                                                                        // one natural + a wildcard
+    }
+    if (sets < CFG.maxSets) {                                                                             // a set of this rank
+      const ps = SUITS.map((su) => has(su + c.r));
+      const p0 = ps.reduce((a, x) => a * (1 - x), 1);
+      const p1 = ps.reduce((a, x, i) => a + x * ps.reduce((b, y, j) => (j === i ? b : b * (1 - y)), 1), 0);
+      none *= 1 - Math.max(0, 1 - p0 - p1); none *= 1 - pw * (1 - p0);
+    }
+    return 1 - none;
+  }
 
   // Would going out right now (scoring this team's melds first) win the game?
   function goOutWins(state, seat) {
@@ -858,10 +1021,11 @@
     return out;
   }
 
-  function smartMeldMoves(state, seat, P) {
+  function smartMeldMoves(state, seat, P, B) {
     const me = state.seats[seat], T = state.teams[teamOf(seat)], u = urgency(state);
     const sets = T.melds.filter((m) => m.type === 'set').length, hand = me.hand, moves = [];
     const late = u > P.midSetU || hand.length <= P.midSetHand, seen = seenCounts(state, seat);
+    const unseenB = (su, r) => (B ? B.free(su + r) : unseen(seen, su, r));
     for (const m of T.melds) {
       const len = meldCards(m).length, wasPure = meldPure(m);
       for (const c of hand) {
@@ -877,12 +1041,12 @@
           if (!(finishing || (len >= P.wildAddLen && u > P.wildAddU) || u > P.wildAddAny)) continue;
           if (m.type === 'seq' && P.pureFirst && u < P.pureU && completedInfo(T).pure === 0) {     // the team needs one pure meld to go out: protect it
             const rs0 = m.slots.map((x) => x.r), hi0 = Math.max(...rs0), lo0 = Math.min(...rs0);
-            const live0 = (hi0 < 14 ? unseen(seen, m.suit, hi0 === 13 ? 1 : hi0 + 1) : 0) + (lo0 > 1 ? unseen(seen, m.suit, lo0 - 1) : 0);
+            const live0 = (hi0 < 14 ? unseenB(m.suit, hi0 === 13 ? 1 : hi0 + 1) : 0) + (lo0 > 1 ? unseenB(m.suit, lo0 - 1) : 0);
             if (live0 >= P.pureLive) continue;
           }
           if (m.type === 'seq' && u < P.waitU) {                  // a pure meld is worth double: wait while the natural card is still likely to come
             const rs = m.slots.map((x) => x.r), hi = Math.max(...rs), lo = Math.min(...rs);
-            const live = (hi < 14 ? unseen(seen, m.suit, hi === 13 ? 1 : hi + 1) : 0) + (lo > 1 ? unseen(seen, m.suit, lo - 1) : 0);
+            const live = (hi < 14 ? unseenB(m.suit, hi === 13 ? 1 : hi + 1) : 0) + (lo > 1 ? unseenB(m.suit, lo - 1) : 0);
             if (live >= P.waitLive) continue;
           }
           score -= 55; act.confirmImpure = true;
@@ -908,8 +1072,14 @@
   function smartKeep(state, seat, P, c, ctx) {
     const me = state.seats[seat], team = teamOf(seat), T = state.teams[team], O = state.teams[1 - team];
     ctx = ctx || { u: urgency(state), seen: seenCounts(state, seat) };
-    const u = ctx.u, seen = ctx.seen;
+    const u = ctx.u, seen = ctx.seen, B = ctx.B;
+    const live = (su, r) => (B ? B.free(su + r) : unseen(seen, su, r));
     let keep = 0;
+    if (B && P.danger) {                                     // the next player is an opponent: what this card would hand them
+      const q = (seat + 1) % 4, pile = state.discard.length + 1;
+      keep += P.dangerUse * useChance(state, B, q, c) * (1 + P.dangerPile * (pile - 1));
+      if (!isWildType(c) && O.melds.some((m) => !isComplete(m) && meldCards(m).length === CFG.completeAt - 1 && checkAdd(m, [c]).ok)) keep += P.dangerDone;
+    }
     if (isWildType(c)) keep += P.spendWild ? P.wildKeep * (1 - u) + P.wildBase : 100;
     else {
       for (const o of me.hand) {
@@ -920,9 +1090,9 @@
       if (T.melds.some((m) => checkAdd(m, [c]).ok)) keep += P.fitW;
       // live outs: neighbours of this card that can still turn up (not in sight yet) make it worth keeping
       const edge = edgeRank(c.r);
-      nbrs(c.r).forEach(([r2, d]) => { keep += P.outsW * unseen(seen, c.s, r2) * (d === 1 ? 1 : .55); });
-      keep += P.setOutsW * (edge ? 1 : .3) * SUITS.reduce((a, su) => a + (su === c.s ? 0 : unseen(seen, su, c.r)), 0) / 3;
-      if (P.danger) {
+      nbrs(c.r).forEach(([r2, d]) => { keep += P.outsW * live(c.s, r2) * (d === 1 ? 1 : .55); });
+      keep += P.setOutsW * (edge ? 1 : .3) * SUITS.reduce((a, su) => a + (su === c.s ? 0 : live(su, c.r)), 0) / 3;
+      if (P.danger && !B) {
         if (O.melds.some((m) => checkAdd(m, [c]).ok)) keep += P.dangerW;                  // would feed the other team
         else if (P.dangerGapW) O.melds.forEach((m) => {                                  // or sit one gap away from the end of their run
           if (m.type !== 'seq' || m.suit !== c.s) return;
@@ -933,8 +1103,8 @@
     }
     return keep;
   }
-  function smartDiscard(state, seat, P) {
-    const ctx = { u: urgency(state), seen: seenCounts(state, seat) };
+  function smartDiscard(state, seat, P, B) {
+    const ctx = { u: urgency(state), seen: seenCounts(state, seat), B };
     let best = null;
     for (const c of state.seats[seat].hand) { const keep = smartKeep(state, seat, P, c, ctx); if (!best || keep < best.keep) best = { keep, id: c.id }; }
     return best && best.id;
@@ -943,11 +1113,26 @@
   /* Lookahead by simulation. Everything the player cannot see (the stack, the other hands, the extra decks) is shuffled
      and dealt out again, in many plausible ways; for each candidate throw the rest of the game is then played out with the
      fast Smart player, and the throw that wins most often is chosen. The same deals are used for every candidate. */
-  function determinize(state, seat) {
+  function determinize(state, seat, B) {
     const s = clone(state), pool = s.stack.slice();
     s.seats.forEach((p, i) => { if (i !== seat) pool.push(...p.hand); });
     s.teams.forEach((t) => pool.push(...t.deck));
     shuffle(pool); let k = 0;
+    if (B) {
+      const mem = mindOf(state, seat), byId = new Map(pool.map((c) => [c.id, c])), used = new Set();
+      const hands = [0, 1, 2, 3].map((i) => (i === seat ? null : mem.known[i].map((x) => byId.get(x.id)).filter(Boolean)));
+      hands.forEach((h) => h && h.forEach((c) => used.add(c.id)));
+      for (const i of shuffle([0, 1, 2, 3].filter((x) => x !== seat))) {
+        const need = s.seats[i].hand.length - hands[i].length, w = B.seats[i] ? B.seats[i].w : {};
+        const pick = pool.filter((c) => !used.has(c.id)).map((c) => ({ c, key: Math.pow(Math.random(), 1 / Math.max(.02, w[ctype(c)] === undefined ? 1 : w[ctype(c)])) }))
+          .sort((a, b) => b.key - a.key).slice(0, need).map((x) => x.c);
+        pick.forEach((c) => used.add(c.id)); s.seats[i].hand = hands[i].concat(pick);
+      }
+      const left = pool.filter((c) => !used.has(c.id));
+      s.teams.forEach((t) => { const n = t.deck.length; t.deck = left.slice(k, k + n); k += n; });
+      s.stack = left.slice(k);
+      return s;
+    }
     s.seats.forEach((p, i) => { if (i !== seat) { const n = p.hand.length; p.hand = pool.slice(k, k + n); k += n; } });
     s.teams.forEach((t) => { const n = t.deck.length; t.deck = pool.slice(k, k + n); k += n; });
     s.stack = pool.slice(k);
@@ -961,8 +1146,8 @@
     }
     return s.result;
   }
-  function rolloutDiscard(state, seat, P, fallback) {
-    const me = state.seats[seat], team = teamOf(seat), ctx = { u: urgency(state), seen: seenCounts(state, seat) };
+  function rolloutDiscard(state, seat, P, fallback, B) {
+    const me = state.seats[seat], team = teamOf(seat), ctx = { u: urgency(state), seen: seenCounts(state, seat), B };
     const seenKey = {}, cands = me.hand.map((c) => ({ c, k: smartKeep(state, seat, P, c, ctx) })).sort((a, b) => a.k - b.k)
       .filter((x) => { const key = x.c.s + x.c.r; if (seenKey[key]) return false; seenKey[key] = 1; return true; }).slice(0, P.rollCands).map((x) => x.c);
     if (cands.length < 2) return fallback;
@@ -970,20 +1155,22 @@
     let done = 0;
     const minDeals = P.rollouts || 2;
     for (let r = 0; r < minDeals || (P.rollMs && Date.now() - t0 < P.rollMs && r < 200); r++) {
-      const base = determinize(state, seat);
+      const base = determinize(state, seat, B);
       cands.forEach((c, i) => {
         const s2 = clone(base);
         if (!apply(s2, seat, { type: 'discard', cardId: c.id }).ok) return;
         const R = s2.phase === 'over' ? s2.result : playOut(s2);
         if (!R) return;
-        const mine = R.scores[team], theirs = R.scores[1 - team];
-        tot[i] += (R.winner === null ? .5 : R.winner === team ? 1 : 0) + .0004 * (mine - theirs);
+        tot[i] += outcome(R, team, P);
       });
       done++;
     }
     let bi = 0; tot.forEach((v, i) => { if (v > tot[bi]) bi = i; });
     return done ? cands[bi].id : fallback;
   }
+  // value of a finished (simulated) game for a team: a win, plus a little for the margin
+  const outcome = (R, team, P) => (R.winner === null ? .5 : R.winner === team ? 1 : 0) + P.rollMarginW * (R.scores[team] - R.scores[1 - team]);
+
   function smartDraw(state, seat, simulating, P) {
     if (state.discard.length && !state.pileRefused) {
       const test = clone(state);
@@ -997,16 +1184,19 @@
 
   /* Finish drive: when the team is able to go out, look for a run of melds this turn that empties the hand
      (wildcards may be spent freely for it). Small depth-first search on copies of the game. */
-  function findGoOut(state, seat, P) {
-    const team = teamOf(seat), me = state.seats[seat];
+  // goal 'claim': empty the hand while the team's extra deck is unclaimed (claims it), without spoiling a pure meld
+  function findGoOut(state, seat, P, goal) {
+    const team = teamOf(seat), me = state.seats[seat], claim = goal === 'claim';
     if (me.hand.length > P.outMaxHand) return null;
     const t = state.teams[team];
-    if (t.deckStatus === 'forfeited') return null;
+    if (t.deckStatus === 'forfeited' || (claim && t.deckStatus !== 'unclaimed')) return null;
+    const done = (s2) => (claim ? s2.teams[team].deckStatus === 'claimed'
+      : s2.phase === 'over' && s2.result && s2.result.reason === 'out' && s2.result.winner === team);
     let budget = P.outBudget;
     const cands = (st) => {
       const hand = st.seats[seat].hand, T = st.teams[team], sets = T.melds.filter((m) => m.type === 'set').length, out = [];
       for (const m of T.melds) for (const c of hand) {
-        const v = checkAdd(m, [c]); if (v.ok) out.push({ type: 'addToMeld', meldId: m.id, cardIds: [c.id], confirmImpure: true });
+        const v = checkAdd(m, [c]); if (v.ok && !(claim && breaksPure(m, v))) out.push({ type: 'addToMeld', meldId: m.id, cardIds: [c.id], confirmImpure: true });
       }
       for (const g of findNewMeldsAll(hand, sets, P, true)) if (checkNewMeld(g, sets).ok) out.push({ type: 'newMeld', cardIds: g.map((c) => c.id) });
       for (const g of findWildMelds(hand, sets, P, true)) out.push({ type: 'newMeld', cardIds: g.map((c) => c.id) });
@@ -1017,14 +1207,15 @@
       const hand = st.seats[seat].hand;
       if (hand.length === 1) {                                           // throwing the last card ends it too
         const s2 = clone(st);
-        if (apply(s2, seat, { type: 'discard', cardId: hand[0].id }).ok && s2.phase === 'over' && s2.result && s2.result.reason === 'out' && s2.result.winner === team) return [{ type: 'discard', cardId: hand[0].id }];
+        if (apply(s2, seat, { type: 'discard', cardId: hand[0].id }).ok && done(s2)) return [{ type: 'discard', cardId: hand[0].id }];
       }
       if (depth <= 0 || !hand.length) return null;
       const list = cands(st).sort((a, b) => b.cardIds.length - a.cardIds.length).slice(0, P.outBranch);
       for (const act of list) {
         const s2 = clone(st), r = apply(s2, seat, act);
         if (!r.ok) continue;
-        if (s2.phase === 'over') { if (s2.result && s2.result.reason === 'out' && s2.result.winner === team) return [act]; continue; }
+        if (done(s2)) return [act];
+        if (s2.phase === 'over') continue;
         const rest = rec(s2, depth - 1);
         if (rest) return [act].concat(rest);
       }
@@ -1039,20 +1230,22 @@
     if (state.phase === 'draw') return smartDraw(state, seat, simulating, P);
     if (state.mustUse) return findUseFor(state, seat, state.mustUse) || { type: 'returnPile' };
     const mayWin = !P.goOutCheck || !canGoOut(state, team) || goOutWins(state, seat);
+    const B = P.team && !simulating ? beliefs(state, seat, P) : null;
     if (P.finish && !simulating) {
       const plan = (state.finishPlan && state.finishPlan.turn === state.turnNo && state.finishPlan.seat === seat) ? state.finishPlan : null;
       let steps = plan ? plan.steps : findGoOut(state, seat, P);
+      if (!plan && !steps && P.claim) steps = findGoOut(state, seat, P, 'claim');
       if (steps && steps.length) { const nxt = steps[0]; state.finishPlan = { turn: state.turnNo, seat, steps: steps.slice(1) }; return nxt; }
     }
-    for (const mv of smartMeldMoves(state, seat, P)) {
+    for (const mv of smartMeldMoves(state, seat, P, B)) {
       if (!mayWin && me.hand.length - mv.act.cardIds.length < 2) continue;        // keep a card rather than end a losing game
       if (!tryOn(state, seat, mv.act)) continue;
       if (P.goOutCheck && endsGameBadly(state, seat, mv.act)) continue;
       return mv.act;
     }
     if (state.finalTurn) return { type: 'endGame' };
-    let first = smartDiscard(state, seat, P);
-    if ((P.rollouts || P.rollMs) && !simulating) first = rolloutDiscard(state, seat, P, first);   // simulations themselves use the plain fast player
+    let first = smartDiscard(state, seat, P, B);
+    if ((P.rollouts || P.rollMs) && !simulating) first = rolloutDiscard(state, seat, P, first, B);   // simulations themselves use the plain fast player
     const ordered = [first].concat(me.hand.map((c) => c.id));
     for (const id of ordered) {
       const act = { type: 'discard', cardId: id };
@@ -1072,6 +1265,7 @@
   return {
     CFG, SUIT_SYM, rankTxt, cardName, isWildType, isNaturalAt, teamOf,
     createGame, apply, checkNewMeld, newMeldOptions, checkAdd, meldCards, meldPure, isTimpa,
+    beliefs,
     isClosed, isComplete, countsPure, breaksPure,
     canGoOut, goOutBlockers, completedInfo, teamScore, redact, countCards,
     botNextAction, pilePaysOff, validateSeq, arrangeSeq, validateSet,
