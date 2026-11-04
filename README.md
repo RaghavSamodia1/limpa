@@ -95,8 +95,14 @@ The weights are plain numbers in `CFG.smart`; a seat can override any of them wi
 | `test/engine-smoke.js` | Plays 200 computer-only games (both levels) and checks cards are conserved and every game ends |
 | `test/online-rooms.js` | Two-phone online test against the real broker (needs Playwright and internet) |
 | `test/bot-eval.js`, `test/bot-tune.js` | Parallel head-to-head games between computer levels or weight sets; self-play tuning |
+| `test/bot-memory.js`, `test/pickup-ui.js`, `test/bot-thread.js`, `test/records.js` | Computer memory never peeks; taking the pile in the browser; thinking off the page thread; game records replay exactly |
+| `js/gamelog.js`, `tools/analyze-games.js` | Game records, and the tool that studies them |
 
 `npm test` runs the smoke test; `npm run arena` runs a Smart-vs-Easy comparison.
+
+## Game records
+
+Every game played on the site (online: on the host's phone) is recorded without names: the deal, each move, whether a person or the computer made it, how long it took, and moves the game refused. Records stay on the phone (menu > Game records, with an on/off switch and a button to send them) and go to a collection point once one is set in `js/gamelog.js`. `node tools/analyze-games.js <records>` replays them and compares every person's move with what the Expert would have done from that person's point of view. See `vault/Game Records.md`.
 
 ## How the 3D works
 

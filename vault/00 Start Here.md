@@ -10,5 +10,6 @@ Open this folder (`vault/`) as an Obsidian vault. Claude reads it at the start o
 - [[UX Decisions]] layout and gameplay choices, and why
 - [[Tester Feedback]] what real players said, and status
 - [[Workflow]] git/PR/test habits and traps
+- [[Game Records]] recording games and learning from how people play; report in [[Human Play Insights]]
 - [[Open Items]] what is next
 - [[Changelog]] merged PRs in order

@@ -282,6 +282,23 @@
     return state;
   }
 
+  /* A game's starting position as card ids (every card's id is fixed: 'c0'..'c107' in a set order), small enough to keep.
+     With the list of moves it replays the game exactly (js/gamelog.js records games, tools/analyze-games.js replays them). */
+  function dealOf(state) {
+    const ids = (a) => a.map((c) => c.id);
+    return { hands: state.seats.map((p) => ids(p.hand)), decks: state.teams.map((t) => ids(t.deck)), stack: ids(state.stack), discard: ids(state.discard), turn: state.turn };
+  }
+  function fromDeal(deal, opts) {
+    const byId = new Map(buildCards().map((c) => [c.id, c]));
+    const get = (id) => { const c = byId.get(id); if (!c) throw new Error('unknown card ' + id); return c; };
+    const s = createGame(opts);
+    s.seats.forEach((p, i) => { p.hand = deal.hands[i].map(get); });
+    s.teams.forEach((t, i) => { t.deck = deal.decks[i].map(get); });
+    s.stack = deal.stack.map(get); s.discard = deal.discard.map(get); s.turn = deal.turn;
+    return s;
+  }
+  const cardById = (() => { let m = null; return (id) => { if (!m) m = new Map(buildCards().map((c) => [c.id, c])); return m.get(id); }; })();
+
   function teamScore(t) {
     return t.melds.reduce((a, m) => a + (m.points || 0), 0) + t.bonus + t.penalties.reduce((a, p) => a + p.pts, 0);
   }
@@ -1171,6 +1188,25 @@
   // value of a finished (simulated) game for a team: a win, plus a little for the margin
   const outcome = (R, team, P) => (R.winner === null ? .5 : R.winner === team ? 1 : 0) + P.rollMarginW * (R.scores[team] - R.scores[1 - team]);
 
+  /* For studying recorded games: how good each of several moves is for the player's team, judged the way the Expert judges
+     its throws. The cards that player cannot see are dealt out in plausible ways from their point of view (their own
+     memory), and every option is played to the end on the same deals. Returns the average result per option (about the
+     chance to win), or null for an option the rules refuse. */
+  function compareMoves(state, seat, options, deals) {
+    const team = teamOf(seat), P = smartParams(state, seat), B = beliefs(state, seat, P);
+    const tot = options.map(() => 0), cnt = options.map(() => 0);
+    for (let r = 0; r < (deals || 16); r++) {
+      const base = determinize(state, seat, B);
+      options.forEach((a, i) => {
+        const s2 = clone(base);
+        if (!apply(s2, seat, a).ok) return;
+        const R = s2.phase === 'over' ? s2.result : playOut(s2);
+        if (R) { tot[i] += outcome(R, team, P); cnt[i]++; }
+      });
+    }
+    return tot.map((t, i) => (cnt[i] ? t / cnt[i] : null));
+  }
+
   function smartDraw(state, seat, simulating, P) {
     if (state.discard.length && !state.pileRefused) {
       const test = clone(state);
@@ -1264,7 +1300,7 @@
 
   return {
     CFG, SUIT_SYM, rankTxt, cardName, isWildType, isNaturalAt, teamOf,
-    createGame, apply, checkNewMeld, newMeldOptions, checkAdd, meldCards, meldPure, isTimpa,
+    createGame, apply, checkNewMeld, newMeldOptions, checkAdd, meldCards, meldPure, isTimpa, dealOf, fromDeal, cardById, compareMoves,
     beliefs,
     isClosed, isComplete, countsPure, breaksPure,
     canGoOut, goOutBlockers, completedInfo, teamScore, redact, countCards,

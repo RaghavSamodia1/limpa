@@ -64,6 +64,24 @@ const Sound = (() => {
     toggle() { on = !on; store.set('sound', on ? 'on' : 'off'); if (on) this.play('turn'); },
   };
 })();
+// Game records (js/gamelog.js): a switch, the records on this phone to send, and what is recorded
+const recordsRow = () => `<h3>Game records</h3><div class="themes">
+    <button class="theme-btn" data-act="records" aria-pressed="${(window.LimpaLog && LimpaLog.enabled()) ? 'true' : 'false'}"><span class="sw snd">📒</span>Record games ${(window.LimpaLog && LimpaLog.enabled()) ? 'on' : 'off'}</button>
+    ${window.LimpaLog && LimpaLog.count ? `<button class="theme-btn" data-act="sendRecords"><span class="sw snd">📤</span>Send ${LimpaLog.count} game${LimpaLog.count === 1 ? '' : 's'}</button>` : ''}</div>
+  <p class="muted" style="font-size:13px;margin:4px 0 0">Moves and scores only, no names. It helps us teach the computer players how people play.</p>`;
+async function shareRecords() {
+  const f = window.LimpaLog ? LimpaLog.file() : { count: 0, text: '' };
+  if (!f.count) { toast('No games recorded yet.'); return; }
+  const name = 'limpa-games-' + new Date().toISOString().slice(0, 10) + '.txt';
+  try {
+    const file = new File([f.text], name, { type: 'text/plain' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "Limpa's Breakfast games" }); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  const url = URL.createObjectURL(new Blob([f.text], { type: 'text/plain' }));
+  const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  toast('Saved ' + f.count + ' games to your downloads.', 'good');
+}
 const soundBtn = () => `<button class="theme-btn" data-act="sound" aria-pressed="${Sound.on}"><span class="sw snd">${Sound.on ? '🔊' : '🔇'}</span>Sound ${Sound.on ? 'on' : 'off'}</button>`;
 
 /* Comfort settings (saved on this phone) */
@@ -151,6 +169,7 @@ function startGame() {
   UI.screen = 'game'; UI.tilt = TILT0; UI.sel.clear(); UI.order = {}; UI.modal = null; UI.cover = null;
   UI.deadline = null; UI.deadlineKey = null; resetDeckSeen();
   const hs = humans(); UI.viewer = hs.length ? hs[0] : 0;
+  Rec.start(UI.G, { mode: hs.length > 1 ? 'hotseat' : 'local' });
   UI.dealing = true; UI.spinning = true;
   render();
   setTimeout(() => { UI.dealing = false; }, 1600);
@@ -222,6 +241,7 @@ const Brain = (() => {
     },
   };
 })();
+const Rec = window.LimpaLog || { start() {}, move() {}, close() {}, file: () => ({ count: 0, text: '' }), enabled: () => false, setEnabled() {}, count: 0, collecting: false };
 function stopBot() { clearTimeout(UI.botTimer); UI.botTimer = null; UI.botJob = null; }   // cancels a pending computer move, thinking or not
 function scheduleBot() {
   const G = UI.G;
@@ -238,10 +258,11 @@ function scheduleBot() {
     let a = job.result.action;
     if (!a) { try { a = E.botNextAction(G, seat); } catch (e) { a = null; } }      // the background thread failed: think here
     let r = a ? E.apply(G, seat, a) : { ok: false };
-    if (!r.ok) r = E.apply(G, seat, { type: G.phase === 'draw' ? 'timeout' : 'discard', cardId: G.seats[seat].hand[0] && G.seats[seat].hand[0].id });
+    if (!r.ok) { a = { type: G.phase === 'draw' ? 'timeout' : 'discard', cardId: G.seats[seat].hand[0] && G.seats[seat].hand[0].id }; r = E.apply(G, seat, a); }
+    Rec.move(G, seat, a, r, { human: false });
     after(r, seat, turnNo, a && a.type);
   };
-  UI.botTimer = setTimeout(() => { UI.botTimer = null; job.waited = true; go(); }, setting.slow() ? 1400 : 560);
+  UI.botTimer = setTimeout(() => { UI.botTimer = null; job.waited = true; go(); }, UI.botDelay !== undefined ? UI.botDelay : setting.slow() ? 1400 : 560);
   Brain.think(G, seat, (res) => { job.result = res || { action: null }; go(); });
 }
 
@@ -250,6 +271,7 @@ function act(action, quiet) {
   const G = UI.G; const seat = UI.net ? UI.viewer : G.turn;
   const prevTurn = G.turnNo;
   const r = E.apply(G, seat, action);
+  Rec.move(G, seat, action, r, { human: true, hint: !!UI.viaHint });
   if (!r.ok) { Sound.play('error'); if (!quiet) toast(r.error, 'err'); return r; }
   if (action.type === 'draw' || action.type === 'pickup') { UI.deadline = null; UI.step = 'meld'; }
   if (action.type === 'pickup') UI.sel = new Set([G.mustUse]);
@@ -310,6 +332,7 @@ setInterval(() => {
     toast("Time's up: auto draw & discard.", 'err');
     if (isGuest()) { guestSend({ t:'act', action:{ type:'timeout' } }); return; }
     const seat = G.turn; const r = E.apply(G, seat, { type:'timeout' });
+    Rec.move(G, seat, { type: 'timeout' }, r, { human: true });
     after(r, seat, -1, 'timeout');
   }
 }, 250);
@@ -366,6 +389,7 @@ function createRoom(resume) {
   const N = UI.net = { role: 'host', code: L.gameId, status: 'connecting', error: '', peers: {}, last: {}, seq: 0, tokens: resume ? resume.tokens : [null, null, null, null] };
   if (resume && resume.G) {                       // picking a game back up after the page was closed or reloaded
     UI.G = resume.G; UI.viewer = 0; resetDeckSeen(); UI.screen = 'game'; UI.tilt = TILT0; UI.order = {}; UI.sel.clear(); UI.modal = null;
+    Rec.start(UI.G, { mode: 'online' });
     UI.G.seats.forEach((st, i) => { if (i > 0 && !st.bot) st.away = Date.now(); });
     UI.deadline = null; UI.deadlineKey = null; UI.dealing = false; UI.spinning = false;
     onTurnChange();
@@ -401,6 +425,7 @@ function hostMessage(key, msg) {
   if (msg.t === 'act') {
     const G = UI.G; if (!G || G.phase === 'over' || !msg.action || typeof msg.action.type !== 'string') { N.tr.send(key, { t: 'reject', error: 'The game is not running.' }); return; }
     const prev = G.turnNo, r = E.apply(G, seat, msg.action);
+    Rec.move(G, seat, msg.action, r, { human: true });
     if (!r.ok) { N.tr.send(key, { t: 'reject', error: r.error, code: r.code }); return; }
     after(r, seat, prev, msg.action.type);
   }
@@ -483,6 +508,7 @@ function startOnlineGame() {
   if (L.seats.some((s) => !s.bot && !s.joined)) { toast('Still waiting for everyone to join.', 'err'); return; }
   stopBot();
   UI.G = E.createGame({ gameId: L.gameId, teamNames: L.teamNames, seats: L.seats.map((s) => ({ name: s.name, avatar: s.avatar, bot: !!s.bot, level: L.level })) });
+  Rec.start(UI.G, { mode: 'online' });
   UI.screen = 'game'; UI.tilt = TILT0; UI.sel.clear(); UI.order = {}; UI.modal = null; UI.cover = null; UI.deadline = null; UI.deadlineKey = null;
   UI.viewer = 0; UI.spinning = false; UI.dealing = true; setTimeout(() => { UI.dealing = false; }, 1600); resetDeckSeen();
   onTurnChange(); toast(UI.G.seats[UI.G.turn].name + ' starts', 'good');
@@ -596,6 +622,7 @@ function leaveRoom(msg, silent) {
     clearInterval(N.timer); clearInterval(N.beat); clearTimeout(N.retry);
     const tr = N.tr; setTimeout(() => { try { tr && tr.close(); } catch (e) {} }, 400);
   }
+  Rec.close('left');
   UI.net = null; UI.G = null; UI.modal = null; UI.cover = null; UI.screen = 'menu'; UI.lobby = null;
   stopBot();
   render(); if (msg) toast(msg, silent ? 'err' : 'good');
@@ -659,8 +686,8 @@ function useHint(h) {
   if (!h) return;
   const a = h.action;
   UI.hintKey = ''; UI.helpShown = false;
-  if (a.type === 'addToMeld') addToMeld(a.meldId, a.cardIds, undefined, a.confirmImpure);
-  else act(a);
+  UI.viaHint = true;                                     // recorded as a move made with the help button
+  try { if (a.type === 'addToMeld') addToMeld(a.meldId, a.cardIds, undefined, a.confirmImpure); else act(a); } finally { UI.viaHint = false; }
 }
 
 /* ---------------- hand order & layout ---------------- */
@@ -1192,6 +1219,7 @@ function renderModal() {
         ${UI.net ? '' : `<button class="theme-btn" data-act="setting" data-key="timer" aria-pressed="${store.get('timer') !== 'off'}"><span class="sw snd">⏱</span>Timer ${store.get('timer') !== 'off' ? 'on' : 'off'}</button>`}
         <button class="theme-btn" data-act="setting" data-key="slow" aria-pressed="${setting.slow()}"><span class="sw snd">🐢</span>Computer ${setting.slow() ? 'slow' : 'normal'}</button></div>
       <h3>Table colour &amp; sound</h3>${themePicker()}<div style="margin-top:8px" class="themes">${soundBtn()}</div>
+      ${isHost() ? recordsRow() : ''}
       <div class="bigrow" style="justify-content:flex-start">
         <button class="btn ghost sm" data-act="rules">How to play</button>
         <button class="btn red sm" data-act="quit">${isHost() ? 'Close room' : 'Leave'}</button>
@@ -1210,6 +1238,7 @@ function renderModal() {
         ${UI.net ? '' : `<button class="theme-btn" data-act="setting" data-key="timer" aria-pressed="${store.get('timer') !== 'off'}"><span class="sw snd">⏱</span>Timer ${store.get('timer') !== 'off' ? 'on' : 'off'}</button>`}
         <button class="theme-btn" data-act="setting" data-key="slow" aria-pressed="${setting.slow()}"><span class="sw snd">🐢</span>Computer ${setting.slow() ? 'slow' : 'normal'}</button></div>
       <h3>Table colour &amp; sound</h3>${themePicker()}<div style="margin-top:8px" class="themes">${soundBtn()}</div>
+      ${recordsRow()}
       <div class="bigrow" style="justify-content:flex-start">
         <button class="btn ghost sm" data-act="rules">How to play</button>
         <button class="btn ghost sm" data-act="redeal">New deal</button>
@@ -1349,6 +1378,8 @@ app.addEventListener('click', (e) => {
       broadcastLobby(); render(); break;
     }
     case 'menu': UI.modal = { type:'menu' }; render(); break;
+    case 'records': if (window.LimpaLog) { LimpaLog.setEnabled(!LimpaLog.enabled()); if (LimpaLog.enabled() && UI.G && !UI.net && UI.G.phase !== 'over') LimpaLog.start(UI.G, { mode: humans().length > 1 ? 'hotseat' : 'local' }); } render(); break;
+    case 'sendRecords': shareRecords(); break;
     case 'seatBot': {
       const i = +el.dataset.seat; G.seats[i].bot = !G.seats[i].bot; UI.lobby.seats[i].bot = G.seats[i].bot;
       const hs = humans(); if (!hs.includes(UI.viewer) && hs.length) UI.viewer = hs[0];
@@ -1357,7 +1388,7 @@ app.addEventListener('click', (e) => {
       render(); onTurnChange(); render(); break;
     }
     case 'redeal': case 'again': UI.modal = null; if (isHost()) startOnlineGame(); else startGame(); break;
-    case 'quit': if (UI.net) { leaveRoom(); break; } stopBot(); UI.G = null; UI.modal = null; UI.cover = null; UI.screen = 'menu'; render(); break;
+    case 'quit': if (UI.net) { leaveRoom(); break; } stopBot(); Rec.close('left'); UI.G = null; UI.modal = null; UI.cover = null; UI.screen = 'menu'; render(); break;
     case 'reveal': UI.viewer = UI.cover; UI.cover = null; armTimer(); render(); break;
     case 'sel': {
       if (G && G.turn !== UI.viewer) toast("It isn't your turn yet.");
