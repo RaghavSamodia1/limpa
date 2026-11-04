@@ -10,13 +10,15 @@ if (process.argv.includes('--worker')) {
   const E = require('../js/engine.js');
   const arg = (k) => { const i = process.argv.indexOf('--' + k); return i > 0 ? process.argv[i + 1] : undefined; };
   const games = +arg('games'), [la, lb] = arg('levels').split(','), PA = arg('pa') ? JSON.parse(arg('pa')) : null, PB = arg('pb') ? JSON.parse(arg('pb')) : null;
-  const res = { win: 0, loss: 0, draw: 0, pts: 0, out: 0, imp: 0, pur: 0 };
+  const res = { win: 0, loss: 0, draw: 0, pts: 0, out: 0, imp: 0, pur: 0, pkA: 0, pkB: 0, pcA: 0, pcB: 0 };
   for (let g = 0; g < games; g++) {
     const flip = g % 2, side = (i) => (i + flip) % 2 === 0;                    // which seats play configuration A
     const G = E.createGame({ seats: [0, 1, 2, 3].map((i) => ({ name: 'P' + i, bot: true, level: side(i) ? la : lb, params: side(i) ? PA : PB })) });
     for (let n = 0; G.phase !== 'over'; n++) {
       if (n > 5000) throw new Error('stuck game');
-      const seat = G.turn; let r = E.apply(G, seat, E.botNextAction(G, seat));
+      const seat = G.turn, act = E.botNextAction(G, seat), pile = G.discard.length;
+      let r = E.apply(G, seat, act);
+      if (r.ok && act && act.type === 'pickup') { if (side(seat)) { res.pkA++; res.pcA += pile; } else { res.pkB++; res.pcB += pile; } }
       if (!r.ok) E.apply(G, seat, { type: G.phase === 'draw' ? 'timeout' : 'discard', cardId: G.seats[seat].hand[0] && G.seats[seat].hand[0].id });
     }
     const R = G.result, mine = flip ? 1 : 0;
@@ -39,12 +41,12 @@ function evalPair(games, la, lb, pa, pb, workers) {
     spawn(process.execPath, args, { stdio: ['ignore', 'inherit', 'inherit'] }).on('close', (c) => {
       if (c) return reject(new Error('worker failed')); const o = JSON.parse(fs.readFileSync(out, 'utf8')); fs.unlinkSync(out); resolve(o);
     });
-  }))).then((rs) => { const r = rs.reduce((a, b) => ({ win: a.win + b.win, loss: a.loss + b.loss, draw: a.draw + b.draw, pts: a.pts + b.pts, out: a.out + b.out, imp: a.imp + b.imp, pur: a.pur + b.pur })); r.n = r.win + r.loss + r.draw; r.rate = r.win / Math.max(1, r.win + r.loss); return r; });
+  }))).then((rs) => { const r = rs.reduce((a, b) => ({ win: a.win + b.win, loss: a.loss + b.loss, draw: a.draw + b.draw, pts: a.pts + b.pts, out: a.out + b.out, imp: a.imp + b.imp, pur: a.pur + b.pur, pkA: a.pkA + b.pkA, pkB: a.pkB + b.pkB, pcA: a.pcA + b.pcA, pcB: a.pcB + b.pcB })); r.n = r.win + r.loss + r.draw; r.rate = r.win / Math.max(1, r.win + r.loss); return r; });
 }
 module.exports = { evalPair };
 if (require.main === module) {
   const [g, la, lb, pa, pb] = process.argv.slice(2), t0 = Date.now();
   evalPair(+g || 800, la || 'smart', lb || 'easy', pa && pa !== 'null' ? JSON.parse(pa) : null, pb && pb !== 'null' ? JSON.parse(pb) : null).then((r) => {
-    console.log(`${r.n} games  ${la} vs ${lb}: wins ${(100 * r.win / r.n).toFixed(1)}%  losses ${(100 * r.loss / r.n).toFixed(1)}%  draws ${(100 * r.draw / r.n).toFixed(1)}%  decisive ${(100 * r.rate).toFixed(1)}%  avg margin ${(r.pts / r.n).toFixed(0)}  ended by going out ${(100 * r.out / r.n).toFixed(0)}%  big melds/game pure ${(r.pur / r.n).toFixed(1)} impure ${(r.imp / r.n).toFixed(1)}  (${((Date.now() - t0) / 1000).toFixed(0)}s)`);
+    console.log(`${r.n} games  ${la} vs ${lb}: wins ${(100 * r.win / r.n).toFixed(1)}%  losses ${(100 * r.loss / r.n).toFixed(1)}%  draws ${(100 * r.draw / r.n).toFixed(1)}%  decisive ${(100 * r.rate).toFixed(1)}%  avg margin ${(r.pts / r.n).toFixed(0)}  ended by going out ${(100 * r.out / r.n).toFixed(0)}%  big melds/game pure ${(r.pur / r.n).toFixed(1)} impure ${(r.imp / r.n).toFixed(1)}  pile cards taken/game A ${(r.pcA / r.n).toFixed(1)} B ${(r.pcB / r.n).toFixed(1)}  (${((Date.now() - t0) / 1000).toFixed(0)}s)`);
   });
 }
