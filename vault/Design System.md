@@ -43,4 +43,5 @@ A calm, warm, modern tabletop for a breakfast-named family game. **Removed casin
 - **Settings:** list rows with real switches (label left, switch right). Toasts: dark snackbars (red for errors, green for good news).
 - **App icon:** saffron square, the espresso card back behind a white ace of spades (`icons/`, rendered from an HTML source with Playwright).
 - **Layout details:** the three name pills sit in one row under the top bar; the other players' face-down fans are kept in place but not drawn (cards still fly from that side); score chips are two lines (team name over score) so 3-digit scores never truncate; the All view tightens mats, piles and extra decks so an iPhone SE fits every meld.
+- **Card shape:** every card is 1 : 1.4 (hand cards 1 : 1.42). `--mh` is computed once on `:root`, so any rule that changes `--mw` must also set `--mh:calc(var(--mw)*1.4)`; forgetting it stretched the piles to 1 : 2.1 in the single-mat views (fixed, guarded by `test/layout.js`).
 - **Icons:** one hand-drawn stroke set in `index.html` (`#i-…` symbols), used through `<svg class="ic"><use href="#i-…"/></svg>`.

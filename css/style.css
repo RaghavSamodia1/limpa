@@ -27,7 +27,8 @@
   --font-display:"Fraunces",Georgia,"Times New Roman",serif;
   /* layout */
   --appw:min(100vw,480px);
-  --mw:clamp(36px,calc(var(--appw)*.125),58px); --mh:calc(var(--mw)*1.4); --strip:calc(var(--mw)*.4);   /* table cards */
+  /* table cards. --mh is worked out here, once: any rule that changes --mw must also set --mh:calc(var(--mw)*1.4), or cards stretch */
+  --mw:clamp(36px,calc(var(--appw)*.125),58px); --mh:calc(var(--mw)*1.4); --strip:calc(var(--mw)*.4);
   --hw:clamp(56px,calc(var(--appw)*.19),92px); --hh:calc(var(--hw)*1.42);                                 /* hand cards */
   --dock-h:210px; --act-h:56px; --ph:760px; --plw:calc(var(--appw)*1.5); --po:60px; --tilt:14deg; --persp:1800px;  /* set by js/app.js */
 }
@@ -278,12 +279,13 @@ a.btn{text-decoration:none}
 .game.show-own:not(.show-opp) .plane,.game.show-opp:not(.show-own) .plane{padding-top:calc(var(--mh)*.35)}
 .game.show-own:not(.show-opp) .fan-t,.game.show-opp:not(.show-own) .fan-t{display:none}
 .game.show-own:not(.show-opp) .zonewrap.own .melds,.game.show-opp:not(.show-own) .zonewrap.opp .melds{--mw:clamp(58px,calc(var(--appw)*.27),122px)}
-.game.show-own:not(.show-opp) .mid,.game.show-opp:not(.show-own) .mid{--mw:clamp(30px,calc(var(--appw)*.085),42px);padding:0 12px 2px}
+.game.show-own:not(.show-opp) .mid,.game.show-opp:not(.show-own) .mid{--mw:clamp(30px,calc(var(--appw)*.085),42px);--mh:calc(var(--mw)*1.4);padding:0 12px 2px}
 .game.show-own:not(.show-opp) .mid .dir,.game.show-opp:not(.show-own) .mid .dir{display:none}
-.game.show-own.show-opp .mid{--mw:clamp(30px,calc(var(--appw)*.1),46px);padding-bottom:4px}
+.game.show-own.show-opp .mid{--mw:clamp(30px,calc(var(--appw)*.1),46px);--mh:calc(var(--mw)*1.4);padding-bottom:4px}
+.game.show-own:not(.show-opp) .stackwrap .count,.game.show-opp:not(.show-own) .stackwrap .count{min-width:22px;height:22px;padding:0 5px;font-size:12px;right:-12px;bottom:-5px}
 .game.show-own.show-opp .zone{padding:18px 8px 6px;gap:6px}
 .game.show-own.show-opp .melds{gap:calc(var(--mw)*.2 + 10px) 8px}
-.game.show-own.show-opp .deck{--mw:32px;--mh:45px;width:38px;padding-top:2px}
+.game.show-own.show-opp .deck{--mw:32px;--mh:calc(var(--mw)*1.4);width:38px;padding-top:2px}
 
 /* ---------- top bar and name pills ---------- */
 .hud{position:absolute;left:0;right:0;top:0;padding:max(10px,env(safe-area-inset-top)) 12px 0;display:flex;align-items:center;gap:10px;pointer-events:none;z-index:6}
@@ -365,7 +367,7 @@ a.btn{text-decoration:none}
 .bigrow{display:flex;align-items:center;gap:10px;margin:18px 0 0;flex-wrap:wrap;justify-content:center}
 .bigrow .btn{flex:1 1 auto}
 .bigmeld{display:flex;flex-wrap:wrap;gap:12px 0;padding:14px 2px 6px}
-.bigmeld .tc{--mw:56px;--strip:23px}
+.bigmeld .tc{--mw:56px;--mh:calc(var(--mw)*1.4);--strip:23px}
 .optrow{display:flex;flex-direction:column;gap:10px;margin-top:8px}
 .opt{display:flex;align-items:center;gap:12px;padding:10px;border-radius:var(--r-m);background:var(--paper);border:1.5px solid var(--line);text-align:left}
 .opt:focus-visible{border-color:var(--accent)}
