@@ -8,4 +8,5 @@
 - #11 Computer plays to finish; bigger meld mat; less wasted space; smoother cards
 - #12 Obsidian vault as project memory
 - #13 Pile pickup fix (glowing card stays selected); Expert with its own memory per player, hand reading and team play, thinking 1.5 s in a background thread; 4x faster engine copies
+- #14 Game records (no names, kept on the phone, sent from the menu or to a collection point) and tools/analyze-games.js (people vs the Expert)
 Earlier: 3D UI, themes, bots (Easy/Smart/Expert), online rooms, GitHub Pages hosting, assistance, staged turns (later removed).
