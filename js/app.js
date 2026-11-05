@@ -812,20 +812,24 @@ const hideFlying = () => FLY.forEach((_, cid) => app.querySelectorAll(`[data-cid
 
 // Sizes each team's meld cards to fill its mat: shrinks them until all melds fit without scrolling, or grows them
 // (up to 1.45x) into spare room. A binary search, so it measures the layout about 9 times instead of up to 50.
+// Fixed limits so meld cards never balloon on an empty mat or shrink to crumbs on a full one.
+const MELD_MAX = 80, MELD_MIN = 32, MELD_MIN_ALL = 28;
 function fitMelds() {
   let worst = 1;
+  const all = !!app.querySelector('.game.show-own.show-opp');
   app.querySelectorAll('.zone').forEach((zone) => {
     const melds = zone.querySelector('.melds'), first = melds && melds.querySelector('.tc');
     if (!first || !zone.offsetParent) return;                 // nothing to fit while a mat is hidden
-    const mw0 = first.offsetWidth;
+    const mw0 = Math.min(first.offsetWidth, MELD_MAX), lo0 = all ? MELD_MIN_ALL : MELD_MIN;
     const fits = (mw) => { melds.style.setProperty('--mw', mw.toFixed(1) + 'px'); return zone.scrollHeight <= zone.clientHeight + 1; };
     let lo, hi;
-    if (fits(mw0)) {                                           // room to spare: grow into it
-      if (fits(mw0 * 1.45)) return;
-      lo = mw0; hi = mw0 * 1.45;
+    if (fits(mw0)) {                                           // room to spare: grow into it, up to the cap
+      const top = Math.min(MELD_MAX, mw0 * 1.3);
+      if (fits(top)) return;
+      lo = mw0; hi = top;
     } else {
-      if (!fits(20)) { melds.style.setProperty('--mw', '20px'); worst = Math.min(worst, 20 / mw0); return; }
-      lo = 20; hi = mw0;
+      if (!fits(lo0)) { melds.style.setProperty('--mw', lo0 + 'px'); worst = Math.min(worst, lo0 / mw0); return; }   // still too many: the mat scrolls
+      lo = lo0; hi = mw0;
     }
     for (let i = 0; i < 7; i++) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid; }
     melds.style.setProperty('--mw', lo.toFixed(1) + 'px');
@@ -1463,7 +1467,6 @@ window.addEventListener('pointermove', (e) => {
   const tgt = dropTarget(e.clientX, e.clientY);
   document.querySelectorAll('.hover').forEach((n)=>{ if (n !== tgt) n.classList.remove('hover'); });
   if (tgt && !tgt.dataset.drop.startsWith('hand:')) tgt.classList.add('hover');
-  showInsBar(tgt, e.clientX);
 }, { passive:false });
 
 function defaultWildPos() { return undefined; }
@@ -1505,8 +1508,7 @@ window.addEventListener('pointerup', (e) => {
   if (!tgt) return;
   const [kind, val] = tgt.dataset.drop.split(':');
   if (kind === 'meld') {
-    const sp = hasWild(d.ids) ? wildSpot(tgt, e.clientX) : null;
-    addToMeld(val, d.ids, sp ? sp.pos : undefined);
+    addToMeld(val, d.ids, undefined);                    // wildcards always find their own spot: where it was dropped doesn't matter
   } else if (kind === 'discard') {
     if (d.ids.length !== 1) { toast('Drop a single card to throw it.', 'err'); return; }
     act({ type:'discard', cardId: d.ids[0] });

@@ -19,3 +19,5 @@ Big, simple, older-player friendly. Minimal text. Use the space. Don't regress s
 
 ## Open design questions
 Portrait vs landscape; screen-reader description of the 3D table; 3-player mode (see [[Open Items]]).
+| Wildcards always auto-place, even when dragged (drop spot ignored) | Raghav: "cards should auto place, I shouldn't tell where in the meld it goes"; a drag to a slightly wrong spot was refused (2♥ onto 5♥4♥3♥★A♥) |
+| Meld cards between 32 and 80 px (28 px in All) | Raghav: cards started too big (one meld ballooned to ~150 px and overflowed) then got too small |
