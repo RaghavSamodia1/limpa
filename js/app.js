@@ -12,27 +12,15 @@ const SUIT_ORDER = { S:0, H:1, D:2, C:3, J:4 };
 const app = document.getElementById('app');
 
 /* Scene tuning: how far the table is tipped back and how strong the perspective is. */
-const TILT0 = 38, TILT_MIN = 14, PERSP = 1800;   // starting tilt; the table flattens as melds pile up
+const TILT0 = 14, TILT_MIN = 6, PERSP = 1800;    // a gentle tilt; the table flattens further as melds pile up
 
-/* ---------------- themes & saved settings ---------------- */
-const THEMES = [
-  { id:'felt', name:'Felt', a:'#2f9366', b:'#4a2a14', bar:'#12231d' },
-  { id:'cafe', name:'Café', a:'#e3c593', b:'#6b3d1c', bar:'#231712' },
-  { id:'midnight', name:'Midnight', a:'#dcbc88', b:'#3a4590', bar:'#171d38' },
-];
+/* ---------------- saved settings (one look: see vault/Design System.md) ---------------- */
 const store = {
   get(k) { try { return localStorage.getItem('limpa.' + k); } catch (e) { return null; } },
   set(k, v) { try { localStorage.setItem('limpa.' + k, v); } catch (e) {} },
 };
-function setTheme(id) {
-  const t = THEMES.find((x) => x.id === id) || THEMES[0];
-  document.documentElement.dataset.theme = t.id; store.set('theme', t.id);
-  const m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', t.bar);
-}
-setTheme(store.get('theme'));
-const themePicker = () => `<div class="themes" role="group" aria-label="Table colour">${THEMES.map((t) =>
-  `<button class="theme-btn ${document.documentElement.dataset.theme === t.id ? 'on' : ''}" data-act="theme" data-theme="${t.id}" aria-pressed="${document.documentElement.dataset.theme === t.id}">
-    <span class="sw" style="background:linear-gradient(135deg,${t.a} 50%,${t.b} 50%)"></span>${t.name}</button>`).join('')}</div>`;
+// a small stroke icon from the set in index.html
+const ic = (name, cls) => `<svg class="ic ${cls || ''}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 
 /* ---------------- sound: tiny synthesised effects, no audio files ---------------- */
 const Sound = (() => {
@@ -65,10 +53,17 @@ const Sound = (() => {
   };
 })();
 // Game records (js/gamelog.js): a switch, the records on this phone to send, and what is recorded
-const recordsRow = () => `<h3>Game records</h3><div class="themes">
-    <button class="theme-btn" data-act="records" aria-pressed="${(window.LimpaLog && LimpaLog.enabled()) ? 'true' : 'false'}"><span class="sw snd">📒</span>Record games ${(window.LimpaLog && LimpaLog.enabled()) ? 'on' : 'off'}</button>
-    ${window.LimpaLog && LimpaLog.count ? `<button class="theme-btn" data-act="sendRecords"><span class="sw snd">📤</span>Send ${LimpaLog.count} game${LimpaLog.count === 1 ? '' : 's'}</button>` : ''}</div>
-  <p class="muted" style="font-size:13px;margin:4px 0 0">Moves and scores only, no names. It helps us teach the computer players how people play.</p>`;
+// Settings as list rows with a real switch (label left, switch right)
+const swRow = (act, key, on, icon, label, note) => `<button class="row" data-act="${act}"${key ? ` data-key="${key}"` : ''} aria-pressed="${on ? 'true' : 'false'}">${ic(icon)}<span class="rl">${label}${note ? `<small>${note}</small>` : ''}</span><span class="sw" aria-hidden="true"></span></button>`;
+const settingsRows = () => `<div class="rows">
+    ${swRow('setting', 'hints', setting.hints(), 'bulb', 'New player help', 'Suggests a move at every step')}
+    ${UI.net ? '' : swRow('setting', 'timer', store.get('timer') !== 'off', 'timer', 'Draw timer', '60 seconds to draw a card')}
+    ${swRow('setting', 'slow', setting.slow(), 'slow', 'Slower computer moves')}
+    ${swRow('sound', '', Sound.on, 'sound', 'Sound')}</div>`;
+// Game records (js/gamelog.js): a switch, the records on this phone to send, and what is recorded
+const recordsRow = () => `<h3>Game records</h3><div class="rows">
+    ${swRow('records', '', !!(window.LimpaLog && LimpaLog.enabled()), 'record', 'Record games', 'Moves and scores only, no names. It helps us teach the computer how people play.')}
+    ${window.LimpaLog && LimpaLog.count ? `<button class="row" data-act="sendRecords">${ic('send')}<span class="rl">Send ${LimpaLog.count} recorded game${LimpaLog.count === 1 ? '' : 's'}</span>${ic('chev', 'go')}</button>` : ''}</div>`;
 async function shareRecords() {
   const f = window.LimpaLog ? LimpaLog.file() : { count: 0, text: '' };
   if (!f.count) { toast('No games recorded yet.'); return; }
@@ -82,7 +77,6 @@ async function shareRecords() {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
   toast('Saved ' + f.count + ' games to your downloads.', 'good');
 }
-const soundBtn = () => `<button class="theme-btn" data-act="sound" aria-pressed="${Sound.on}"><span class="sw snd">${Sound.on ? '🔊' : '🔇'}</span>Sound ${Sound.on ? 'on' : 'off'}</button>`;
 
 /* Comfort settings (saved on this phone) */
 const setting = {
@@ -100,38 +94,20 @@ const UI = {
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const isRed = (c) => c.s === 'H' || c.s === 'D';
 
-/* ---------------- card faces ---------------- */
-const PIPS = {
-  2:[[50,0],[50,100]],
-  3:[[50,0],[50,50],[50,100]],
-  4:[[0,0],[100,0],[0,100],[100,100]],
-  5:[[0,0],[100,0],[50,50],[0,100],[100,100]],
-  6:[[0,0],[100,0],[0,50],[100,50],[0,100],[100,100]],
-  7:[[0,0],[100,0],[50,25],[0,50],[100,50],[0,100],[100,100]],
-  8:[[0,0],[100,0],[50,25],[0,50],[100,50],[50,75],[0,100],[100,100]],
-  9:[[0,0],[100,0],[0,33],[100,33],[50,50],[0,67],[100,67],[0,100],[100,100]],
-  10:[[0,0],[100,0],[50,17],[0,33],[100,33],[0,67],[100,67],[50,83],[0,100],[100,100]],
-};
-const COURT = { 11:'capJ', 12:'crownQ', 13:'crownK' };
-function pipsHTML(r, sym) {
-  return '<span class="pips">' + PIPS[r].map(([x, y]) =>
-    `<i${y > 50 ? ' class="f"' : ''} style="left:${x}%;top:${y}%">${sym}</i>`).join('') + '</span>';
-}
-function faceHTML(c, sym) {
-  return `<span class="face"><svg viewBox="0 0 32 22"><use href="#${COURT[c.r]}"/></svg><b>${E.rankTxt(c.r)}</b><i>${sym}</i></span>`;
-}
-// Cards used as overlapped strips ('tc') only show the index and a corner suit; everything else gets a full face.
+/* ---------------- card faces ----------------
+   Clean, large-index faces: rank over suit in the left strip (the part that shows when cards overlap) and a big suit
+   at the bottom right; aces show one large suit, court cards a framed serif letter, jokers a violet star. Cards used as
+   overlapped strips on the table ('tc') show only the index and a corner suit. */
 function cardHTML(c, cls, extra, inner) {
   cls = cls || '';
   const small = /\btc\b/.test(cls);
   const attrs = (extra || '') + ' data-cid="' + c.id + '"';
   if (c.s === 'J') {
-    return `<div class="card joker ${small ? '' : 'pipped'} ${cls}" ${attrs}><span class="cr">JOKER</span>${small ? '' : '<span class="jk">★</span>'}<span class="cc">★</span>${inner || ''}</div>`;
+    return `<div class="card joker ${small ? '' : 'pipped'} ${cls}" ${attrs}><span class="cr">★</span><span class="jl">JOKER</span>${small ? '' : '<span class="jk">★</span>'}${inner || ''}</div>`;
   }
-  const sym = E.SUIT_SYM[c.s];
-  let body = '';
-  if (!small) body = c.r === 1 ? `<span class="pips"><i class="a" style="left:50%;top:50%">${sym}</i></span>` : c.r >= 11 ? faceHTML(c, sym) : pipsHTML(c.r, sym);
-  return `<div class="card ${isRed(c) ? 'red' : ''} ${small ? '' : 'pipped'} ${cls}" ${attrs}><span class="cr">${E.rankTxt(c.r)}</span><span class="cs">${sym}</span>${body}<span class="cc">${sym}</span>${inner || ''}</div>`;
+  const sym = E.SUIT_SYM[c.s], kind = small ? '' : c.r === 1 ? 'has-ace' : c.r >= 11 ? 'court' : '';
+  const body = small ? '' : c.r === 1 ? `<span class="ace">${sym}</span>` : c.r >= 11 ? `<span class="face"><b>${E.rankTxt(c.r)}</b><i>${sym}</i></span>` : '';
+  return `<div class="card ${isRed(c) ? 'red' : ''} ${c.r === 10 ? 'ten' : ''} ${kind} ${cls}" ${attrs}><span class="cr">${E.rankTxt(c.r)}</span><span class="cs">${sym}</span>${body}<span class="cc">${sym}</span>${inner || ''}</div>`;
 }
 
 function genId() { let s=''; for (let i=0;i<6;i++) s+=Math.floor(Math.random()*10); return s; }
@@ -336,7 +312,7 @@ setInterval(() => {
     after(r, seat, -1, 'timeout');
   }
 }, 250);
-const ringBg = (p, low) => `conic-gradient(${low ? 'var(--bad)' : 'var(--yellow)'} ${(p * 360).toFixed(1)}deg,rgba(0,0,0,.45) 0)`;
+const ringBg = (p, low) => `conic-gradient(${low ? 'var(--bad)' : 'var(--accent)'} ${(p * 360).toFixed(1)}deg,var(--line-2) 0)`;
 
 /* ---------------- online rooms ----------------
    Host: runs the rules and the computer players, checks every move, and sends each guest a copy of the game
@@ -889,73 +865,73 @@ const isStandalone = () => (window.matchMedia && matchMedia('(display-mode: stan
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); UI.installEvt = e; });
 window.addEventListener('appinstalled', () => { UI.installEvt = null; render(); });
 function renderMenu() {
-  const fan = [['S',1],['H',13],['D',12],['C',11],['S',10]].map(([s, r], i) =>
-    cardHTML({ id:'m' + i, s, r }, '', `style="--sw:calc(var(--hw)*.4);width:var(--hw);height:var(--hh);font-size:calc(var(--hw)*.36);left:calc(50% - var(--hw)/2 + ${(i - 2) * 41}px);transform:rotate(${(i - 2) * 11}deg)"`)).join('');
-  return `<div class="screen menu"><div class="room"></div><div class="menu-table"></div>
-    <div class="logo" style="font-size:min(54px,12.5vw)"><div class="suits">♠ ♥ ♦ ♣</div>Limpa's<br>Breakfast<small>🥞 🍳 ☕ TEAM CARD GAME</small></div>
-    <div class="menu-fan">${fan}</div>
+  const fan = [['S', 1], ['H', 13], ['D', 12]].map(([su, r], i) =>
+    cardHTML({ id: 'm' + i, s: su, r }, '', `style="transform:translateX(${(i - 1) * 46}%) rotate(${(i - 1) * 9}deg)"`)).join('');
+  return `<div class="screen menu"><div class="room"></div>
+    <header class="brand">
+      <div class="fan3" aria-hidden="true">${fan}</div>
+      <h1 class="wordmark">Limpa's<br><em>Breakfast</em></h1>
+      <p class="sub">A team card game for four. Play on this phone, against the computer, or online with friends.</p>
+    </header>
     <div class="menu-col">
       ${resumeButtons()}
-      <button class="btn" data-act="new">Play on this phone</button>
-      <button class="btn green" data-act="createRoom">Play online with friends</button>
+      <button class="btn big" data-act="new">${ic('play', 'fill')}Play on this phone</button>
+      <button class="btn ghost big" data-act="createRoom">${ic('users')}Play online with friends</button>
       <button class="btn ghost" data-act="join">Join with a room code</button>
-      <button class="btn ghost" data-act="rules">How to play</button>
-      ${isStandalone() ? '' : '<button class="btn ghost" data-act="install">📲 Add to home screen</button>'}
-      ${themePicker()}
-      <div class="tagline">2 v 2 · play with friends on one phone, or against the computer</div>
+      <div class="links"><button class="link" data-act="rules">How to play</button>${isStandalone() ? '' : '<button class="link" data-act="install">Add to home screen</button>'}</div>
     </div></div>`;
 }
 
 function resumeButtons() {
   const h = readJSON('host'), g = readJSON('session');
   let out = '';
-  if (h && h.code && h.G && h.G.phase !== 'over' && fresh(h)) out += `<button class="btn red" data-act="resumeHost">Resume your room ${esc(h.code)}</button>`;
-  else if (h && h.code && !h.G && fresh(h)) out += `<button class="btn red" data-act="resumeHost">Re-open your room ${esc(h.code)}</button>`;
-  if (g && g.code && fresh(g)) out += `<button class="btn red" data-act="rejoin">Rejoin room ${esc(g.code)}</button>`;
+  if (h && h.code && h.G && h.G.phase !== 'over' && fresh(h)) out += `<button class="btn green big" data-act="resumeHost">Resume your room ${esc(h.code)}</button>`;
+  else if (h && h.code && !h.G && fresh(h)) out += `<button class="btn green big" data-act="resumeHost">Re-open your room ${esc(h.code)}</button>`;
+  if (g && g.code && fresh(g)) out += `<button class="btn green big" data-act="rejoin">Rejoin room ${esc(g.code)}</button>`;
   return out;
 }
 function renderJoin() {
   const pf = profile();
   return `<div class="screen join"><div class="room"></div>
-    <div class="logo" style="font-size:36px">Join a game</div>
+    <h1 class="logo" style="font-size:36px;margin:0">Join a game</h1>
     <div class="menu-col" style="align-items:stretch">
       <label for="nameIn" class="muted jl">Your name</label>
       <div class="namerow"><button class="ava" data-act="myAva" aria-label="Change your picture">${pf.avatar}</button><input id="nameIn" class="textin" value="${esc(pf.name)}" maxlength="14" autocomplete="off" /></div>
       <label for="gidIn" class="muted jl">Room code (from your friend's invite)</label>
       <input id="gidIn" class="textin code" placeholder="123456" maxlength="6" inputmode="numeric" pattern="[0-9]*" autocomplete="off" value="${esc(UI.joinCode || '')}" />
-      <button class="btn green" data-act="doJoin">Join</button>
+      <button class="btn big" data-act="doJoin">Join</button>
       <div class="joinmsg">${esc(UI.joinMsg)}</div>
-      <button class="btn ghost sm" data-act="home" style="align-self:center">← Back</button>
+      <button class="btn ghost sm" data-act="home" style="align-self:center">${ic('back')}Back</button>
     </div></div>`;
 }
 
 function renderRoom() {
   const N = UI.net, L = UI.lobby, host = isHost();
-  const stText = N.status === 'ready' || N.status === 'connected' ? '● Room open' : N.status === 'lost' ? 'Reconnecting…' : N.status === 'error' ? 'Not connected' : 'Connecting…';
+  const stText = N.status === 'ready' || N.status === 'connected' ? 'Room open' : N.status === 'lost' ? 'Reconnecting…' : N.status === 'error' ? 'Not connected' : 'Connecting…';
   const stCls = N.status === 'ready' || N.status === 'connected' ? 'ok' : N.status === 'error' || N.status === 'lost' ? 'bad' : '';
   const head = `<div class="codebox"><small>ROOM CODE</small><b>${esc(N.code)}</b><span class="st ${stCls}">${stText}</span></div>`;
-  if (!L) return `<div class="screen room-screen"><div class="room"></div>${head}<div class="muted" style="font-size:15px">${esc({ broker: 'Reaching the matchmaking server…', dialing: 'Finding the host…', hello: 'Found the host, joining…', retry: 'Slow connection, trying again…' }[N.stage] || 'Joining…')}</div><button class="btn ghost sm" data-act="leaveRoom">← Cancel</button></div>`;
+  if (!L) return `<div class="screen room-screen"><div class="room"></div>${head}<div class="muted" style="font-size:15px">${esc({ broker: 'Reaching the matchmaking server…', dialing: 'Finding the host…', hello: 'Found the host, joining…', retry: 'Slow connection, trying again…' }[N.stage] || 'Joining…')}</div><button class="btn ghost sm" data-act="leaveRoom">${ic('back')}Cancel</button></div>`;
   const seatRow = (i) => {
     const sp = L.seats[i], mine = i === (host ? 0 : N.mySeat);
     let right = '', left = `<span class="ava">${esc(sp.avatar)}</span><span class="rname">${esc(sp.name)}${mine ? ' <i class="you">you</i>' : ''}</span>`;
     if (host && i === 0) left = `<button class="ava" data-act="myAva" aria-label="Change your picture">${esc(sp.avatar)}</button><input class="textin sm" data-seatname="0" value="${esc(sp.name)}" maxlength="14" aria-label="Your name" />`;
-    if (sp.bot) right = host ? `<button class="toggle on" data-act="roomSeat" data-seat="${i}" data-mode="open">🤖 Computer</button>` : `<span class="tag">🤖 Computer</span>`;
+    if (sp.bot) right = host ? `<button class="toggle on" data-act="roomSeat" data-seat="${i}" data-mode="open">Computer</button>` : `<span class="tag">Computer</span>`;
     else if (i === 0) right = `<span class="tag">Host</span>`;
     else if (sp.joined) right = host ? `<button class="toggle" data-act="roomSeat" data-seat="${i}" data-mode="kick">Remove</button>` : `<span class="tag ok">Here ✓</span>`;
     else right = host ? `<button class="toggle" data-act="roomSeat" data-seat="${i}" data-mode="cpu">Use computer</button>` : `<span class="tag">Waiting…</span>`;
     const wait = !sp.bot && !sp.joined && i > 0 ? '<span class="rname wait">Waiting for a friend…</span>' : '';
-    return `<div class="seat-row ${!sp.bot && !sp.joined && i > 0 ? 'open' : ''}">${wait ? `<span class="ava dim">🍽️</span>${wait}` : left}${right}</div>`;
+    return `<div class="seat-row ${!sp.bot && !sp.joined && i > 0 ? 'open' : ''}">${wait ? `<span class="ava dim">${ic('user')}</span>${wait}` : left}${right}</div>`;
   };
   const team = (t) => `<div class="team panel t${t}"><div class="tname">${host ? `<input class="team-name" data-team="${t}" value="${esc(L.teamNames[t])}" maxlength="16" aria-label="Team ${t + 1} name" />` : `<b>${esc(L.teamNames[t])}</b>`}</div>${seatRow(t)}${seatRow(t + 2)}</div>`;
   const waiting = L.seats.filter((s) => !s.bot && !s.joined).length;
   const share = `<div class="sharerow">
-      <button class="btn sm" data-act="share">Share invite</button>
+      <button class="btn sm" data-act="share">${ic('share')}Share invite</button>
       <a class="btn sm green" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(shareText(N.code))}">WhatsApp</a>
-      <button class="btn sm ghost" data-act="copyLink">Copy link</button></div>`;
+      <button class="btn sm ghost" data-act="copyLink">${ic('copy')}Copy link</button></div>`;
   let foot;
   if (host) foot = `${N.status === 'error' ? `<div class="joinmsg">${esc(N.error)}</div><button class="btn red" data-act="roomRetry">Try again</button>` : ''}
       <div class="level" role="group" aria-label="Computer skill"><span>Computer players</span>${LEVELS.map((v) => `<button class="seg ${L.level === v ? 'on' : ''}" data-act="level" data-level="${v}" aria-pressed="${L.level === v}">${LEVEL_NAME[v]}</button>`).join('')}</div>
-      <button class="btn" data-act="startRoom" style="font-size:20px;padding:12px 40px" ${waiting || N.status === 'error' ? 'disabled' : ''}>▶ ${waiting ? 'Waiting for ' + waiting + ' more' : 'Start game'}</button>
+      <button class="btn big" data-act="startRoom" style="width:min(340px,100%)" ${waiting || N.status === 'error' ? 'disabled' : ''}>${waiting ? 'Waiting for ' + waiting + ' more' : ic('play', 'fill') + 'Start game'}</button>
       <button class="btn ghost sm" data-act="leaveRoom">Close room</button>`;
   else foot = `<div class="muted" style="font-size:16px;font-weight:700;text-align:center">Waiting for the host to start…</div><button class="btn ghost sm" data-act="leaveRoom">Leave room</button>`;
   return `<div class="screen room-screen"><div class="room"></div>${head}${host ? share : ''}${team(0)}${team(1)}${foot}</div>`;
@@ -968,25 +944,24 @@ function renderLobby() {
       ${[t, t+2].map((i)=>`<div class="seat-row">
         <button class="ava" data-act="ava" data-seat="${i}" aria-label="Change avatar">${L.seats[i].avatar}</button>
         <input data-seatname="${i}" value="${esc(L.seats[i].name)}" maxlength="14" aria-label="Seat ${i+1} name" />
-        <button class="toggle ${L.seats[i].bot?'on':''}" data-act="botToggle" data-seat="${i}">${L.seats[i].bot?'🤖 Computer':'🙂 Human'}</button>
+        <button class="toggle ${L.seats[i].bot?'on':''}" data-act="botToggle" data-seat="${i}" aria-pressed="${L.seats[i].bot}">${L.seats[i].bot?'Computer':'Person'}</button>
       </div>`).join('')}
     </div>`;
   const ready = L.seats.every((s)=>s.name.trim());
   return `<div class="screen lobby"><div class="room"></div>
-    <div class="gidrow"><span class="muted" style="font-size:12px">GAME ID</span><span class="gid">${esc(L.gameId)}</span>
-      <button class="btn ghost sm" data-act="copy">📋 Copy</button></div>
+    <h1 class="logo" style="font-size:32px;margin:0">New game</h1>
     ${team(0)}${team(1)}
     <div class="level" role="group" aria-label="Computer skill"><span>Computer players</span>
       ${LEVELS.map((v) => `<button class="seg ${L.level === v ? 'on' : ''}" data-act="level" data-level="${v}" aria-pressed="${L.level === v}">${LEVEL_NAME[v]}</button>`).join('')}</div>
-    <div class="muted" style="font-size:11px;text-align:center">Seats alternate ${esc(L.teamNames[0])} → ${esc(L.teamNames[1])}. Teammates sit opposite each other. If you make more than one seat Human, you pass the phone between turns.</div>
-    <button class="btn" data-act="play" ${ready?'':'disabled'} style="font-size:20px;padding:12px 40px">▶ Play</button>
-    <button class="btn ghost sm" data-act="home">← Back</button>
+    <p class="note" style="text-align:center;max-width:340px">Teammates sit opposite each other. With more than one person on this phone, you pass it between turns.</p>
+    <button class="btn big" data-act="play" ${ready?'':'disabled'} style="width:min(340px,100%)">${ic('play', 'fill')}Play</button>
+    <button class="btn ghost sm" data-act="home">${ic('back')}Back</button>
   </div>`;
 }
 
 const stackEdge = (n) => {
   const k = Math.max(1, Math.min(6, Math.ceil(n / 6))); const s = [];
-  for (let i = 1; i <= k; i++) s.push(`${i}px ${i}px 0 ${i % 2 ? 'var(--back-dark)' : '#fff'}`);
+  for (let i = 1; i <= k; i++) s.push(`${i}px ${i}px 0 ${i % 2 ? 'var(--back-2)' : 'var(--paper)'}`);
   return s.join(',');
 };
 
@@ -1086,14 +1061,14 @@ function renderGame() {
   let ctl = '';
   const helpSlot = setting.hints() ? helpBtn : '';
   if (stage === 'draw') ctl = `<span class="ctl">${helpSlot}
-      <button class="btn" data-act="pickup" ${canPick ? '' : 'disabled'}>Take pile</button>
-      ${G.finalTurn && !G.stack.length ? `<button class="btn red" data-act="endGame">End game</button>` : `<button class="btn green" data-act="draw" ${canDraw ? '' : 'disabled'}>Draw card</button>`}</span>`;
+      <button class="btn ghost" data-act="pickup" ${canPick ? '' : 'disabled'}>Take pile</button>
+      ${G.finalTurn && !G.stack.length ? `<button class="btn red" data-act="endGame">End game</button>` : `<button class="btn" data-act="draw" ${canDraw ? '' : 'disabled'}>Draw card</button>`}</span>`;
   else if (stage === 'play') ctl = `<span class="ctl">${helpSlot}
       ${returnBtn ? `<button class="btn" data-act="returnPile" aria-label="Return the pile and draw instead">↩ Return</button>` : ''}
       <button class="btn ${newValid ? 'green place' : ''}" data-act="newMeld" id="newBtn" ${on && selCards.length >= 3 ? '' : 'disabled'}>${newValid ? 'Place ✓' : 'New meld'}</button>
       ${returnBtn ? '' : endBtn ? `<button class="btn red" data-act="endGame">End game</button>` : `<button class="btn red" data-act="discard" id="throwBtn" ${selCards.length === 1 && !G.finalTurn ? '' : 'disabled'}>${thrower ? 'Throw ' + esc(thrower) : 'Throw'}</button>`}</span>`;
   else if (stage === 'watch' && UI.net && G.phase !== 'over' && !who.bot && !who.away && G.turn !== viewer) ctl = `<span class="ctl"><button class="btn" data-act="buzz" aria-label="Ring ${esc(who.name)}">🔔 Ring ${esc(who.name)}</button></span>`;
-  else if (stage === 'watch' && G.phase !== 'over' && !UI.spinning) ctl = `<span class="ctl"><span class="status">${esc(who.away ? who.name + ' lost connection' : who.name + (who.bot ? ' is thinking…' : ' is playing…'))}</span></span>`;
+  else if (stage === 'watch' && G.phase !== 'over' && !UI.spinning) ctl = `<span class="ctl"><span class="status">${esc(who.away ? who.name + ' lost connection' : who.name === 'You' ? 'Your turn' : who.name + (who.bot ? ' is thinking…' : ' is playing…'))}</span></span>`;
   else ctl = '<span class="ctl"></span>';
 
   const showTimer = myTurn && G.phase === 'draw' && UI.deadline;
@@ -1160,6 +1135,16 @@ function meldStatus(m) {
   return { cls:'', text: n + '/7' };
 }
 
+// The meld detail's one-line status, in words
+function meldSummary(m) {
+  const n = E.meldCards(m).length, pure = E.meldPure(m);
+  if (m.scored === 'timpa' || (E.isClosed(m) && E.isTimpa(m))) return 'Timpa: 13 natural cards, locked' + (m.points ? ', ' + m.points + ' points' : '');
+  if (m.scored) return 'Completed, ' + (m.scored === 'pure' && !pure ? 'turning impure at the end of the turn' : m.scored + ', ' + m.points + ' points');
+  if (n >= E.CFG.completeAt) return 'Completed: scores ' + (pure ? 'as pure (200)' : 'as impure (100)') + ' at the end of the turn';
+  const left = E.CFG.completeAt - n;
+  return left + ' more card' + (left === 1 ? '' : 's') + ' to complete it (' + E.CFG.completeAt + ' cards scores)';
+}
+
 function meldHTML(m, droppable, hinted) {
   const cards = m.type === 'seq' ? m.slots : m.cards.map((c)=>({ c, r:m.rank }));
   const st = meldStatus(m);
@@ -1212,43 +1197,36 @@ function renderModal() {
   if (M.type === 'menu' && UI.net) {
     return `<div class="ov"><div class="modal">
       <h2>Room ${esc(UI.net.code)}</h2>
-      <p class="muted">${isHost() ? 'You are the host. Friends play on their own phones, and the game stays on yours, so keep this page open.' : 'You are playing on your own phone. The host runs the game.'}</p>
-      ${isHost() ? `<div class="sharerow" style="justify-content:flex-start"><button class="btn sm" data-act="share">Share invite</button><button class="btn sm ghost" data-act="copyLink">Copy link</button></div>` : ''}
-      <h3>Comfort</h3><div class="themes">
-        <button class="theme-btn" data-act="setting" data-key="hints" aria-pressed="${setting.hints()}"><span class="sw snd">💡</span>New player help ${setting.hints() ? 'on' : 'off'}</button>
-        ${UI.net ? '' : `<button class="theme-btn" data-act="setting" data-key="timer" aria-pressed="${store.get('timer') !== 'off'}"><span class="sw snd">⏱</span>Timer ${store.get('timer') !== 'off' ? 'on' : 'off'}</button>`}
-        <button class="theme-btn" data-act="setting" data-key="slow" aria-pressed="${setting.slow()}"><span class="sw snd">🐢</span>Computer ${setting.slow() ? 'slow' : 'normal'}</button></div>
-      <h3>Table colour &amp; sound</h3>${themePicker()}<div style="margin-top:8px" class="themes">${soundBtn()}</div>
+      <p class="muted" style="margin:0 0 12px">${isHost() ? 'You are the host. Friends play on their own phones and the game runs on yours, so keep this page open.' : 'You are playing on your own phone. The host runs the game.'}</p>
+      ${isHost() ? `<div class="sharerow" style="justify-content:flex-start"><button class="btn sm" data-act="share">${ic('share')}Share invite</button><button class="btn sm ghost" data-act="copyLink">${ic('copy')}Copy link</button></div>` : ''}
+      <h3>Settings</h3>${settingsRows()}
       ${isHost() ? recordsRow() : ''}
-      <div class="bigrow" style="justify-content:flex-start">
-        <button class="btn ghost sm" data-act="rules">How to play</button>
-        <button class="btn red sm" data-act="quit">${isHost() ? 'Close room' : 'Leave'}</button>
-        <button class="btn sm" data-act="close">Resume</button>
+      <div class="bigrow">
+        <button class="btn" data-act="close" style="flex-basis:100%">Resume</button>
+        <button class="btn ghost" data-act="rules">How to play</button>
+        <button class="btn ghost danger" data-act="quit">${isHost() ? 'Close room' : 'Leave'}</button>
       </div></div></div>`;
   }
   if (M.type === 'menu') {
     return `<div class="ov"><div class="modal">
-      <h2>Menu · ${esc(G.gameId)}</h2>
-      <h3>Seats (simulate a player dropping for 3+ min)</h3>
-      ${G.seats.map((s,i)=>`<div class="seat-row" style="margin-bottom:6px"><div class="ava" style="width:32px;height:32px;font-size:17px;border-width:2px">${s.avatar}</div>
-        <div style="flex:1;font-weight:700">${esc(s.name)} <span class="muted" style="font-size:11px">· ${esc(G.teams[s.team].name)}</span></div>
-        <button class="toggle ${s.bot?'on':''}" data-act="seatBot" data-seat="${i}">${s.bot?'🤖 Computer':'🙂 Human'}</button></div>`).join('')}
-      <h3>Comfort</h3><div class="themes">
-        <button class="theme-btn" data-act="setting" data-key="hints" aria-pressed="${setting.hints()}"><span class="sw snd">💡</span>New player help ${setting.hints() ? 'on' : 'off'}</button>
-        ${UI.net ? '' : `<button class="theme-btn" data-act="setting" data-key="timer" aria-pressed="${store.get('timer') !== 'off'}"><span class="sw snd">⏱</span>Timer ${store.get('timer') !== 'off' ? 'on' : 'off'}</button>`}
-        <button class="theme-btn" data-act="setting" data-key="slow" aria-pressed="${setting.slow()}"><span class="sw snd">🐢</span>Computer ${setting.slow() ? 'slow' : 'normal'}</button></div>
-      <h3>Table colour &amp; sound</h3>${themePicker()}<div style="margin-top:8px" class="themes">${soundBtn()}</div>
+      <h2>Menu</h2>
+      <h3>Players</h3>
+      <div class="rows">${G.seats.map((s, i) => `<div class="row" style="cursor:default"><span class="ava" style="width:34px;height:34px;font-size:18px">${s.avatar}</span>
+        <span class="rl">${esc(s.name)}<small>${esc(G.teams[s.team].name)}</small></span>
+        <button class="toggle ${s.bot ? 'on' : ''}" data-act="seatBot" data-seat="${i}" aria-pressed="${s.bot}">${s.bot ? 'Computer' : 'Person'}</button></div>`).join('')}</div>
+      <p class="note">Switch any seat between a person and the computer, even mid-game.</p>
+      <h3>Settings</h3>${settingsRows()}
       ${recordsRow()}
-      <div class="bigrow" style="justify-content:flex-start">
-        <button class="btn ghost sm" data-act="rules">How to play</button>
-        <button class="btn ghost sm" data-act="redeal">New deal</button>
-        <button class="btn red sm" data-act="quit">Quit</button>
-        <button class="btn sm" data-act="close">Resume</button>
+      <div class="bigrow">
+        <button class="btn" data-act="close" style="flex-basis:100%">Resume</button>
+        <button class="btn ghost" data-act="rules">How to play</button>
+        <button class="btn ghost" data-act="redeal">New deal</button>
+        <button class="btn ghost danger" data-act="quit">Quit</button>
       </div></div></div>`;
   }
   if (M.type === 'deckTip') {
     return `<div class="ov"><div class="modal" style="text-align:center">
-      <h2>Extra deck claimed 🎉</h2>
+      <h2>Extra deck claimed</h2>
       <p>${M.now ? 'Your team\'s 11 extra cards are now in your hand, marked with an <b style="color:var(--orange)">orange dot</b>. Keep playing this turn.' : 'Your team\'s 11 extra cards are in your hand, marked with an <b style="color:var(--orange)">orange dot</b>. You can play them from your next turn.'}</p>
       <p style="text-align:left;margin:6px 0 0">Remember:<br>• Meld <b>at least one</b> orange-dot card, or your team loses <b>100 points</b>.<br>• To go out you need that, plus <b>2 finished melds</b>, one of them pure.</p>
       <div class="bigrow"><button class="btn" data-act="close">Got it</button></div>
@@ -1270,7 +1248,7 @@ function renderModal() {
     else note = 'Opponent meld (view only).';
     return `<div class="ov"><div class="modal">
       <h2>${m.type==='seq'?E.SUIT_SYM[m.suit]+' sequence':'Set of '+E.rankTxt(m.rank)+'s'} · ${cards.length} cards</h2>
-      <div class="muted" style="font-size:12px">${esc(st.text)}${m.points?' · '+m.points+' pts':''}</div>
+      <div class="muted" style="font-size:15px">${esc(meldSummary(m))}</div>
       <div class="bigmeld">${items}</div>
       <p class="muted">${note}</p>
       <div style="text-align:right"><button class="btn" data-act="close">Close</button></div>
@@ -1278,14 +1256,15 @@ function renderModal() {
   }
   if (M.type === 'results') {
     const R = G.result; const b = R.breakdown;
-    const win = R.winner === null ? "It's a draw!" : '🏆 Team ' + esc(b[R.winner].name) + ' wins!';
+    const win = R.winner === null ? "It's a draw" : esc(b[R.winner].name) + ' wins';
     const pen = (x) => x.penalties.length ? x.penalties.map((p)=>`${p.pts} <span class="muted" style="font-size:10px">(${esc(p.reason)})</span>`).join('<br>') : '0';
     return `<div class="ov"><div class="modal">
       <div class="winner">${win}</div>
       <div class="muted" style="text-align:center;font-size:12px">${R.reason==='out'?esc(G.seats[R.outSeat].name)+' went out':'The centre stack ran out'}</div>
       <table class="res">
         <tr><th></th><th>${esc(b[0].name)}</th><th>${esc(b[1].name)}</th></tr>
-        <tr><td>Completed (pure / impure)</td><td>${b[0].completed} (${b[0].pure+b[0].timpas} / ${b[0].impure})</td><td>${b[1].completed} (${b[1].pure+b[1].timpas} / ${b[1].impure})</td></tr>
+        <tr><td>Pure melds</td><td>${b[0].pure + b[0].timpas}</td><td>${b[1].pure + b[1].timpas}</td></tr>
+        <tr><td>Impure melds</td><td>${b[0].impure}</td><td>${b[1].impure}</td></tr>
         <tr><td>Timpas</td><td>${b[0].timpas}</td><td>${b[1].timpas}</td></tr>
         <tr><td>Meld points</td><td>${b[0].meldPoints}</td><td>${b[1].meldPoints}</td></tr>
         <tr><td>Going-out bonus</td><td>${b[0].bonus}</td><td>${b[1].bonus}</td></tr>
@@ -1358,7 +1337,6 @@ app.addEventListener('click', (e) => {
       break;
     }
     case 'sound': Sound.toggle(); render(); break;
-    case 'theme': setTheme(el.dataset.theme); render(); break;
     case 'level': UI.lobby.level = el.dataset.level; store.set('level', UI.lobby.level); if (isHost()) broadcastLobby(); render(); break;
     case 'play': startGame(); break;
     case 'createRoom': createRoom(); break;
