@@ -8,6 +8,7 @@ Open this folder (`vault/`) as an Obsidian vault. Claude reads it at the start o
 - [[Computer Players]] bots, tuning, results
 - [[Online Rooms]] PeerJS rooms, buzzer, codes
 - [[UX Decisions]] layout and gameplay choices, and why
+- [[Design System]] the one look: tokens, type, components, rules for older players
 - [[Tester Feedback]] what real players said, and status
 - [[Workflow]] git/PR/test habits and traps
 - [[Game Records]] recording games and learning from how people play; report in [[Human Play Insights]]

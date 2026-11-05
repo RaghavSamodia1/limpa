@@ -18,23 +18,18 @@ On a phone, "Add to Home Screen" installs it full-screen with its own icon.
 
 ## What is in the game
 
-- **3D table.** A tilted table in real perspective, the other players' hands fanned face-down on it (with their real card counts),
-  team mats for melds, the piles and the extra decks on the table, and your own hand fanned at the bottom. Cards fly between piles, hands and melds.
-- **Colour themes.** *Felt* (green card table, default), *Café* (warm walnut) and *Midnight*. Pick one from the main menu or the in-game menu.
-- **Computer players.** *Expert* (default, with lookahead), *Smart* or *Easy* (the original prototype player), chosen in the lobby. See below.
-- **Three steps, one thing at a time.** A turn is shown as Step 1 *Draw*, Step 2 *Make melds*, Step 3 *Throw*. Each step shows only what matters: the deck and the pile in step 1,
-  your team's melds in step 2, the pile in step 3, and both teams' melds while the others play. Three buttons (*Your melds / Their melds / Piles*) look at anything else.
-- **Help.** A 💡 suggestion at every step in plain words ("Add the 7♦ to the glowing run"), with the cards or meld highlighted and a *Do it* button that plays it for you.
-  It is the Smart computer player's choice, asked on your behalf. Suggestions can be switched off.
+- **A calm, modern table.** A warm, light table with a gentle tilt: the piles in the middle, a mat for each team's melds, your hand fanned at the bottom and the other players as name pills. Cards glide between the piles, hands and melds. One look only ("Morning", see `vault/Design System.md`).
+- **Easy to read.** Large type (Figtree, with a Fraunces wordmark), strong contrast, big buttons and touch targets, selected cards that lift and get a ring, real on/off switches in the menu.
+- **Computer players.** *Expert* (default: table memory, team play and lookahead), *Smart* or *Easy*, chosen in the lobby. See below.
+- **One play step.** Draw a card or take the pile; then *New meld* and *Throw* are both on screen. A switcher shows *Your melds*, *Their melds*, the *Pile* up close, or *All* of the table.
+- **Help.** With *New player help* on, a suggestion at every step in plain words, with the cards or meld lit up and a *Do it* button. Off by default.
 - **No questions about wildcards.** A Joker or 2 is placed automatically. Drag it to an exact spot on a meld if you want to choose.
-- **Less fiddly.** No dragging needed: tap cards, then *Place*, or select cards and tap a meld to add them; tap a card and *Throw*. The hand sorts itself. Optional no-timer mode (solo games) and slow computer players, in the menu under *Comfort*.
-- **Easy to read.** Large type, large buttons, high-contrast table labels, and all melds shown at once: the table tips flatter as it fills up before any card shrinks.
-- **Sound.** Small synthesised effects with a mute toggle. No audio files.
-- **Online rooms.** *Play online with friends* makes a room code like `482913` (six numbers) plus a share link (system share sheet, WhatsApp, or copy).
-  Friends open the link, type their name and join; the host picks which seats are friends and which are computers, then starts. See below.
-- **Pass and play.** Make more than one seat Human and the phone shows a "pass the phone" screen between turns.
+- **Less fiddly.** Tap cards, then *Place*, or select cards and tap a meld to add them; tap a card and *Throw*. Optional no-timer mode (solo games) and slower computer players.
+- **Sound.** Small synthesised effects with a switch. No audio files.
+- **Online rooms.** *Play online with friends* makes a six-digit room code plus a share link (share sheet, WhatsApp, or copy). Friends open the link, type their name and join; the host picks which seats are friends and which are computers, then starts. A buzzer rings a player who is taking long. See below.
+- **Pass and play.** Make more than one seat a person and the phone shows a "pass the phone" screen between turns.
 
-![Themes](docs/screenshots/themes.png)
+![The menu, the table and the menu sheet](docs/screenshots/morning.png)
 
 ## Online rooms
 
@@ -85,8 +80,8 @@ The weights are plain numbers in `CFG.smart`; a seat can override any of them wi
 | Path | What it is |
 |---|---|
 | `index.html`, `manifest.webmanifest`, `sw.js`, `icons/` | Page shell, installable-app files and offline cache |
-| `css/style.css` | The 3D scene, card faces, hand fan, buttons, screens and the three colour themes (tokens at the top) |
-| `js/app.js` | UI: rendering, layout maths, drag and drop, timers, computer-player turns, card-flight animations, sound, themes |
+| `css/style.css` | The one theme: design tokens at the top, then the 3D table, card faces, hand fan, buttons, screens and sheets |
+| `js/app.js` | UI: rendering, layout maths, drag and drop, timers, computer-player turns, card-flight animations, sound |
 | `js/net.js`, `js/vendor/peerjs.min.js` | Online rooms: peer-to-peer transport and the PeerJS library |
 | `js/engine.js` | Rules engine and computer players |
 | `docs/RULES.md` | The rules the engine enforces (v2.0, 2v2) |

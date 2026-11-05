@@ -1,7 +1,7 @@
 # UX decisions and why
 | Decision | Why |
 |---|---|
-| 3D tilted table, felt theme | Raghav's reference screenshot of a mobile card game |
+| 3D tilted table (now gentle, 14°), one light theme | Started from Raghav's reference screenshot; redesigned 5 Nov 2026 to be modern and less casino, one theme only ([[Design System]]) |
 | Player avatars removed from the table, names only | Tester: logos in the way, and a 3-player version is planned |
 | Staged 3-step turns were **dropped** | Testers: too many steps, and Throw jumped to the pile then needed a second tap. Now one play step |
 | Default view per stage (Pile / Your melds / All) | The whole table at once shrank everything ("worse, everything smaller") |
