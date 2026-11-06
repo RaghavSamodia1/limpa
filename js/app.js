@@ -729,6 +729,9 @@ function setVars(M) {
    landed, while the real card stays hidden until the clone arrives. */
 const REDUCED = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
 const FLY = new Map();   // card id -> flights in progress
+// Eases in from rest and settles softly. The old curve (.22,.9,.28,1, 340 ms) covered 38% of the path in the first two
+// frames, so on a phone the card looked like it jumped to the pile and then crept (tester video, 6 Nov 2026).
+const FLY_MS = 400, FLY_EASE = 'cubic-bezier(.3,.2,.2,1)';
 const zoneOf = (el) => el.closest('.hand') ? 'hand' : el.closest('.topwrap') ? 'top' : el.closest('.history') ? 'hist' : el.closest('.meld') ? 'meld' : 'other';
 function geom(el, flat) {
   const r = el.getBoundingClientRect();
@@ -748,12 +751,21 @@ function snapshot() {
 function launch(node, from, to, delay, fade, done) {
   const w = document.createElement('div'); w.className = 'fly';
   w.style.cssText = `width:${to.nw}px;height:${to.nh}px;left:${to.cx - to.nw / 2}px;top:${to.cy - to.nh / 2}px`;
-  w.appendChild(node); document.body.appendChild(w);
   const tf = (g, d) => `translate(${d ? g.cx - to.cx : 0}px,${d ? g.cy - to.cy : 0}px) rotate(${g.rot}deg) scale(${(g.pw / to.nw).toFixed(3)}) rotateX(${g.tilt}deg)`;
-  const a = w.animate([{ transform: tf(from, true), opacity: 1 }, { transform: tf(to, false), opacity: fade ? 0 : 1 }],
-    { duration: 340, delay, easing: 'cubic-bezier(.22,.9,.28,1)', fill: 'both' });
-  const end = () => { w.remove(); if (done) done(); };
-  a.finished.then(end, end);
+  w.style.transform = tf(from, true);                          // parked where it starts until the new layout is on screen
+  w.appendChild(node); document.body.appendChild(w);
+  // Start on the next frame, not now: the render that called us has just rebuilt and measured the page, and on a phone
+  // that first frame can come late. An animation started now would spend its first frames before anything is drawn and
+  // the card would seem to jump most of the way. (A timer backs up the frame callback, which a hidden tab never runs.)
+  let started = false;
+  const start = () => {
+    if (started) return; started = true;
+    const a = w.animate([{ transform: tf(from, true), opacity: 1 }, { transform: tf(to, false), opacity: fade ? 0 : 1 }],
+      { duration: FLY_MS, delay, easing: FLY_EASE, fill: 'both' });
+    const end = () => { w.remove(); if (done) done(); };
+    a.finished.then(end, end);
+  };
+  requestAnimationFrame(start); setTimeout(start, 100);
 }
 function flyCard(el, from, delay) {
   if (!el.offsetParent) return;                               // its mat is hidden in this step

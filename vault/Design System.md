@@ -11,7 +11,7 @@ A calm, warm, modern tabletop for a breakfast-named family game. **Removed casin
 - Contrast: main text 15:1, secondary text about 7:1 (`--ink-2` on paper 6.9). White text never sits on the orange accent (3.3:1). Cards get a hairline border and a soft shadow, because white on the table is only 1.3:1.
 - Touch targets: main buttons at least 48 px tall; icon buttons 44 px.
 - State is never colour alone: selected cards lift **and** get a ring; switches move **and** change colour; the current player's name pill turns dark.
-- Motion is short (120 to 340 ms), ease-out, and off with reduced motion.
+- Motion is short (120 to 400 ms) and off with reduced motion. Card flights ease in from rest and settle (`cubic-bezier(.3,.2,.2,1)`, 400 ms), start on the frame after the render, and animate only transform and opacity (the shadow is a box-shadow on the card, never a `filter`). A curve that front-loads the travel looks like a jump on a phone.
 
 ## Tokens (`css/style.css :root`)
 | Token | Value | Use |

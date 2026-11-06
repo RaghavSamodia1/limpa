@@ -12,6 +12,7 @@
 | Extra-deck reminder shown until an extra-deck card is melded | Players forgot to use it |
 | Idle button row shows "X is thinking…" | Wasted space complaint |
 | Hand cards glide (FLIP), no whole-table fade | "Animation not smooth, cards snapping" |
+| Card flights start on the next frame and ease in from rest (.3,.2,.2,1, 400 ms) | "Card played to the middle is very choppy" (jump then creep) |
 | Install button + PWA | Raghav wants it on the home screen |
 
 ## Principles from Raghav
