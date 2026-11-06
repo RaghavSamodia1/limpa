@@ -278,7 +278,7 @@ a.btn{text-decoration:none}
 .game.piles-big .stackwrap .count{font-size:18px;min-width:34px;height:34px}
 .game.show-own:not(.show-opp) .plane,.game.show-opp:not(.show-own) .plane{padding-top:calc(var(--mh)*.35)}
 .game.show-own:not(.show-opp) .fan-t,.game.show-opp:not(.show-own) .fan-t{display:none}
-.game.show-own:not(.show-opp) .zonewrap.own .melds,.game.show-opp:not(.show-own) .zonewrap.opp .melds{--mw:clamp(58px,calc(var(--appw)*.27),122px)}
+.game.show-own:not(.show-opp) .zonewrap.own .melds,.game.show-opp:not(.show-own) .zonewrap.opp .melds{--mw:clamp(56px,calc(var(--appw)*.18),72px)}
 .game.show-own:not(.show-opp) .mid,.game.show-opp:not(.show-own) .mid{--mw:clamp(30px,calc(var(--appw)*.085),42px);--mh:calc(var(--mw)*1.4);padding:0 12px 2px}
 .game.show-own:not(.show-opp) .mid .dir,.game.show-opp:not(.show-own) .mid .dir{display:none}
 .game.show-own.show-opp .mid{--mw:clamp(30px,calc(var(--appw)*.1),46px);--mh:calc(var(--mw)*1.4);padding-bottom:4px}
