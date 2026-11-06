@@ -10,4 +10,6 @@
 - #13 Pile pickup fix (glowing card stays selected); Expert with its own memory per player, hand reading and team play, thinking 1.5 s in a background thread; 4x faster engine copies
 - #14 Game records (no names, kept on the phone, sent from the menu or to a collection point) and tools/analyze-games.js (people vs the Expert)
 - #15 Redesign: one modern light theme "Morning" (no casino cues), new type, cards, icons, app icon
+- #16 Wildcards always auto-place when dragged; meld card size limits (32 to 80 px, 28 px in All)
+- #17 Smooth card flights: start on the next frame, gentler easing (400 ms), no per-frame shadow filter
 Earlier: 3D UI, themes, bots (Easy/Smart/Expert), online rooms, GitHub Pages hosting, assistance, staged turns (later removed).
