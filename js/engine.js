@@ -880,6 +880,7 @@
       if (own.team === undefined) P.team = 1;
       if (own.claim === undefined) P.claim = 1;
       if (own.plan === undefined) P.plan = 1;
+      if (own.planDrawMs === undefined) P.planDrawMs = Math.round(P.rollMs * .6);   // take the pile or draw: searched too
     }
     return P;
   };

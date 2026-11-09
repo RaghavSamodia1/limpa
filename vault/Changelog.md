@@ -12,4 +12,5 @@
 - #15 Redesign: one modern light theme "Morning" (no casino cues), new type, cards, icons, app icon
 - #16 Wildcards always auto-place when dragged; meld card size limits (32 to 80 px, 28 px in All)
 - #17 Smooth card flights: start on the next frame, gentler easing (400 ms), no per-frame shadow filter
+- #18 Planning Expert: searches whole-turn plans and take-the-pile-or-draw to the end of the game, 3x faster simulations, thinks on several cores
 Earlier: 3D UI, themes, bots (Easy/Smart/Expert), online rooms, GitHub Pages hosting, assistance, staged turns (later removed).

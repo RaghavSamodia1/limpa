@@ -201,7 +201,7 @@ function armTimer() {
    lists the plans worth comparing, all of them play those plans out on their own imagined deals, and the totals are
    pooled, so the same thinking time covers several times as many deals. Opened as a local file, or if the browser
    refuses the threads, they think here with the engine's shorter default. */
-const BOT_THINK_MS = 1500;
+const BOT_THINK_MS = 1200;     // per whole-turn plan; the pile-or-draw choice gets 60% of this
 const BOT_THREADS = Math.max(1, Math.min(4, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 1));
 const Brain = (() => {
   let pool = [], seq = 0; const waiting = new Map();
