@@ -2,6 +2,7 @@
 // that cards are conserved (108) and that every game ends. Run with: node test/engine-smoke.js
 'use strict';
 const E = require('../js/engine.js');
+E.CFG.smart.expertMs = 25;     // rules check, not strength: Experts still plan and search, just briefly
 
 const GAMES = +process.argv[2] || 200;
 const LEVELS = ['smart', 'easy', 'expert'];

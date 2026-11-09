@@ -1,5 +1,5 @@
 # Computer players (`js/engine.js`)
-Levels: **easy** (original), **smart** (heuristic, params in `CFG.smart`, per-seat override `seat.params`), **expert** = smart + simulation lookahead (`rollMs`, `determinize`, `playOut`, `rolloutDiscard`).
+Levels: **easy** (original), **smart** (heuristic, params in `CFG.smart`, per-seat override `seat.params`), **expert** = smart + search: whole-turn plans and pile-or-draw played to the end of the game on imagined deals (`planTurn`, `searchDraw`, `determinize`, `playOut`; see Planning Expert below).
 
 ## History and lessons
 - Early tuning was invalid because `createGame` ignored seat `params`; fixed, experiments redone.
@@ -29,6 +29,19 @@ Measured: smart/expert completed about 4 impure vs 1 pure meld per game; in stac
 - **Counting** (Raghav: track the stack and hand sizes, gauge the effect): already used. Hand sizes set each player's share in the hand estimates, the stack sets urgency, the pile size sets throw caution, and lookahead deals use the exact counts (simulated games end when the real stack would). Four extra count rules were tested vs team+claim on 3200 games and dropped: take the pile when stuck with <=3 cards (50.4%), keep 3 cards while the team can't go out (50.5%), value pure-run cards more (51.1%), rush to claim the deck before the stack runs out (47.8%, and 43.6% when aggressive).
 - Measured stuck problem: in about 17% of turns a player sits on <=2 cards unable to go out, 74% of those for lack of a pure meld; 15 in 100 team-games lose the deck when the stack runs out.
 - Tried and dropped (no measurable gain): pickup-vs-draw lookahead (changes how often it takes the pile, same win rate), only overruling the plain choice on clear evidence, more weight on score margin in the lookahead, a "race" mode when opponents are about to go out (49-50%).
+
+## Planning Expert (Nov 2026, Raghav: "still dumb... plan strategies like chess bots, not turn by turn")
+How chess engines work: search ahead + judge positions, as many positions per second as possible. Cards are hidden, so the Expert uses the card-game version (determinized search, as in strong bridge/skat programs): deal the unseen cards out many plausible ways (weighted by hand reading), play every option to the **end of the game** on the same deals, keep the best.
+- **Whole-turn plans** (`turnPlans`, `planTurn`): the Smart line of melds, the same line stopped early (keep melds in hand), the line without wildcard melds, each with its best few throws (`planThrows 4`, `planThrowsAlt 2`). The chosen plan is kept in `state.finishPlan` and played step by step (re-thought if the table changed).
+- **Take the pile or draw** (`searchDraw`): both played out (`planDrawMs` = 60% of the plan time).
+- **Successive halving** (`searchOptions`): after 4 deals the worse half of the options is dropped, then after 8, 16... so the time goes to close calls.
+- **3x faster simulations** (61 -> about 180 games a second on one core): melds keep one object shape (a `delete` had pushed them into V8's slow mode, copies took 31% of the time), card counts in a typed array, `addOne` quick fit check (equal to `checkAdd` on 5.8M cases), cached seat settings, the game log shared between copies.
+- **Several cores** (`js/bot-worker.js`, `Brain` in app.js): one thread `prepare`s the options, all threads `runLines` on their own deals, `pickLine` pools the totals (best average among options played at least half as often as the most-played). Up to 4 threads (cores - 1). Think time 1.2 s per plan + 0.7 s for pile-or-draw.
+- **Results** (240 games each, same think time per decision, old = previous Expert with the new speed-ups):
+  - plans only vs old: 55.8% decisive, +40 a game.
+  - plans + pile-or-draw search vs old: 68.7%, +120.
+  - shipped settings vs old: **74.2% decisive, +133 a game**. Takes 41 pile cards a game vs 24: the search finds the pickups that pay off (the earlier test of a pickup lookahead had too few deals to see it).
+- Ideas not done yet: thinking during the human's turn; a learned position value so simulations can stop early (AlphaZero-style); more plan shapes (e.g. holding a wildcard for a later pure meld).
 
 ## How to evaluate
 `node test/bot-eval.js 1600 smart smart '<newParamsJson>' '<oldParamsJson>'` (about 90 s). Expert games are slow (about 4 s per decision budget), use few games.
