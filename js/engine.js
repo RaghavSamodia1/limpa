@@ -1297,8 +1297,9 @@
   }
   // Plays every option to the end on shared deals and keeps the best half each round. run(base, option) -> finished game
   // result, or null when the option can't be played on that deal. Returns the index of the best option.
-  function searchOptions(state, seat, P, B, n, run, ms) {
+  function searchOptions(state, seat, P, B, n, run, ms, stats) {
     const team = teamOf(seat), tot = new Array(n).fill(0), cnt = new Array(n).fill(0), t0 = Date.now();
+    if (stats) { stats.tot = tot; stats.cnt = cnt; }
     let alive = [...Array(n).keys()], step = P.planStep, deals = 0;
     const mean = (i) => (cnt[i] ? tot[i] / cnt[i] : -1);
     while (alive.length > 1 && deals < P.planMaxDeals && (deals < P.planMinDeals || Date.now() - t0 < ms)) {
@@ -1309,6 +1310,33 @@
     }
     return alive.reduce((b, i) => (mean(i) > mean(b) ? i : b), alive[0]);
   }
+  // Several threads can think about one decision: one lists the options (prepare), every thread plays them out on its own
+  // deals (runLines), and the totals are pooled (pickLine). Inside a thread a search request is passed out by throwing.
+  let COLLECT = false;
+  const NEED = {};
+  function searchLines(state, seat, P, B, lines, ms, kind) {
+    if (COLLECT) { NEED.req = { kind, lines, ms }; throw NEED; }
+    return searchOptions(state, seat, P, B, lines.length, (base, i) => playLine(base, seat, lines[i]), ms);
+  }
+  function prepare(state, seat) {
+    COLLECT = true;
+    try { const action = botNextAction(state, seat); return { action, plan: state.finishPlan || null }; }
+    catch (e) { if (e === NEED) return { search: NEED.req }; throw e; }
+    finally { COLLECT = false; NEED.req = null; }
+  }
+  function runLines(state, seat, lines, ms) {
+    const P = smartParams(state, seat), B = P.team ? beliefs(state, seat, P) : null, stats = {};
+    searchOptions(state, seat, Object.assign({}, P, { planMinDeals: 1 }), B, lines.length, (base, i) => playLine(base, seat, lines[i]), ms, stats);
+    return stats;
+  }
+  // Pools the threads' totals; the winner is the best average among options that were played out often enough.
+  function pickLine(all) {
+    const n = all[0].tot.length, tot = new Array(n).fill(0), cnt = new Array(n).fill(0);
+    all.forEach((st) => st.tot.forEach((v, i) => { tot[i] += v; cnt[i] += st.cnt[i]; }));
+    const most = Math.max(...cnt); let best = 0, bv = -1;
+    for (let i = 0; i < n; i++) if (cnt[i] >= most / 2 && tot[i] / cnt[i] > bv) { bv = tot[i] / cnt[i]; best = i; }
+    return best;
+  }
   const playLine = (base, seat, acts) => {
     const s2 = clone(base);
     for (const a of acts) { if (s2.phase === 'over' || s2.turn !== seat) break; if (!apply(s2, seat, a).ok) return null; }
@@ -1318,16 +1346,14 @@
     const plans = turnPlans(state, seat, P, B);
     if (!plans.length) return null;
     if (plans.length === 1) return plans[0].acts;
-    const best = searchOptions(state, seat, P, B, plans.length, (base, i) => playLine(base, seat, plans[i].acts), P.rollMs);
-    return plans[best].acts;
+    return plans[searchLines(state, seat, P, B, plans.map((x) => x.acts), P.rollMs, 'plan')].acts;
   }
   // Take the pile or draw: both played out on the same deals (the turn after either is played by the fast Smart player).
   function searchDraw(state, seat, P, B, plain) {
     if (!state.discard.length || state.pileRefused || !state.stack.length) return plain;
     const test = clone(state); if (!apply(test, seat, { type: 'pickup' }).ok) return plain;
     const opts = [{ type: 'pickup' }, { type: 'draw' }];
-    const best = searchOptions(state, seat, P, B, 2, (base, i) => playLine(base, seat, [opts[i]]), P.planDrawMs);
-    return opts[best];
+    return opts[searchLines(state, seat, P, B, opts.map((a) => [a]), P.planDrawMs, 'draw')];
   }
 
   function smartDraw(state, seat, simulating, P) {
@@ -1429,7 +1455,7 @@
   return {
     CFG, SUIT_SYM, rankTxt, cardName, isWildType, isNaturalAt, teamOf,
     createGame, apply, checkNewMeld, newMeldOptions, checkAdd, meldCards, meldPure, isTimpa, dealOf, fromDeal, cardById, compareMoves,
-    beliefs, addOne,
+    beliefs, addOne, prepare, runLines, pickLine,
     isClosed, isComplete, countsPure, breaksPure,
     canGoOut, goOutBlockers, completedInfo, teamScore, redact, countCards,
     botNextAction, pilePaysOff, validateSeq, arrangeSeq, validateSet,

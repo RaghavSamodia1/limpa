@@ -196,24 +196,45 @@ function armTimer() {
   UI.deadlineKey = key; UI.deadline = Date.now() + E.CFG.drawSeconds * 1000;
 }
 
-/* Computer players think in a background thread (bot-worker.js) when the page comes from the web, so the Expert can
-   take its time without freezing anything. Opened as a local file, or if the browser refuses the thread, they think
-   here with the engine's shorter default. */
+/* Computer players think in background threads (bot-worker.js) when the page comes from the web, so the Expert can
+   take its time without freezing anything. With several processor cores it thinks on a few threads at once: one thread
+   lists the plans worth comparing, all of them play those plans out on their own imagined deals, and the totals are
+   pooled, so the same thinking time covers several times as many deals. Opened as a local file, or if the browser
+   refuses the threads, they think here with the engine's shorter default. */
 const BOT_THINK_MS = 1500;
+const BOT_THREADS = Math.max(1, Math.min(4, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 1));
 const Brain = (() => {
-  let w = null, seq = 0; const waiting = new Map();
+  let pool = [], seq = 0; const waiting = new Map();
+  const fail = () => { pool = []; const cbs = [...waiting.values()]; waiting.clear(); cbs.forEach((cb) => cb(null)); };
   try {
     if (typeof Worker === 'function' && /^https?:$/.test(location.protocol)) {
-      w = new Worker('js/bot-worker.js');
-      w.onmessage = (e) => { const cb = waiting.get(e.data.id); waiting.delete(e.data.id); if (cb) cb(e.data); };
-      w.onerror = (e) => { if (e && e.preventDefault) e.preventDefault(); w = null; const cbs = [...waiting.values()]; waiting.clear(); cbs.forEach((cb) => cb(null)); };
+      for (let i = 0; i < BOT_THREADS; i++) {
+        const w = new Worker('js/bot-worker.js');
+        w.onmessage = (e) => { const cb = waiting.get(e.data.id); waiting.delete(e.data.id); if (cb) cb(e.data); };
+        w.onerror = (e) => { if (e && e.preventDefault) e.preventDefault(); fail(); };
+        pool.push(w);
+      }
     }
-  } catch (e) { w = null; }
+  } catch (e) { pool = []; }
+  const ask = (w, msg, cb) => { const id = ++seq; waiting.set(id, cb); try { w.postMessage(Object.assign({ id, thinkMs: BOT_THINK_MS }, msg)); } catch (e) { waiting.delete(id); cb(null); } };
+  const local = (G, seat, done) => { let action = null; try { action = E.botNextAction(G, seat); } catch (e) {} done({ action, plan: G.finishPlan }); };
   return {
+    threads: () => pool.length,
     think(G, seat, done) {
-      if (w) { const id = ++seq; waiting.set(id, done); try { w.postMessage({ id, state: G, seat, thinkMs: BOT_THINK_MS }); return; } catch (e) { waiting.delete(id); } }
-      let action = null; try { action = E.botNextAction(G, seat); } catch (e) {}
-      done({ action, plan: G.finishPlan });
+      if (!pool.length) return local(G, seat, done);
+      if (pool.length === 1) return ask(pool[0], { op: 'think', state: G, seat }, (r) => done(r && !r.failed ? r : null));
+      ask(pool[0], { op: 'prepare', state: G, seat }, (r) => {
+        if (!r || r.failed) return done(null);
+        if (!r.search) return done({ action: r.action, plan: r.plan });
+        const { kind, lines, ms } = r.search, stats = []; let left = pool.length;
+        pool.forEach((w) => ask(w, { op: 'run', state: G, seat, lines, ms }, (x) => {
+          if (x && x.stats) stats.push(x.stats);
+          if (--left) return;
+          if (!stats.length) return done(null);
+          const best = lines[E.pickLine(stats)];
+          done({ action: best[0], plan: kind === 'plan' ? { turn: G.turnNo, seat, steps: best.slice(1) } : undefined });
+        }));
+      });
     },
   };
 })();
@@ -1538,7 +1559,7 @@ function dropTarget(x, y) {
   return null;
 }
 
-window.__limpa = { UI, E, render, after, addToMeld, act, NETCFG, ROOM_RE, scheduleBot };
+window.__limpa = { UI, E, render, after, addToMeld, act, NETCFG, ROOM_RE, scheduleBot, Brain };
 { const m = /[#&]room=([0-9A-Za-z-]+)/.exec(location.hash || '');
   if (m) { UI.joinCode = normCode(m[1]); UI.screen = 'join'; try { history.replaceState(null, '', location.href.split('#')[0]); } catch (e) {} } }
 render();

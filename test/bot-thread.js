@@ -31,6 +31,8 @@ server.listen(0, '127.0.0.1', async () => {
   await pg.waitForFunction(() => { const G = window.__limpa.UI.G; return G && (G.turnNo >= 14 || G.phase === 'over'); }, null, { timeout: 120000 }).catch(() => {});
   const st = await pg.evaluate(() => ({ turn: window.__limpa.UI.G.turnNo, phase: window.__limpa.UI.G.phase, long: window.__long }));
   ok(reqs.some((u) => /bot-worker\.js/.test(u)), 'the background thinking thread was loaded');
+  const threads = await pg.evaluate(() => window.__limpa.Brain.threads());
+  ok(threads >= 1, `computer players think on ${threads} background thread(s)`);
   ok(st.turn >= 14 || st.phase === 'over', `four Expert computers played on (${st.turn} turns in ${((Date.now() - t0) / 1000).toFixed(0)} s)`);
   ok(st.long >= 0 && st.long < 250, `the page never froze while they thought (longest busy stretch ${Math.round(st.long)} ms)`);
   ok(!errs.length, 'no page errors ' + (errs.length ? errs.join(' | ') : ''));
