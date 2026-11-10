@@ -1,5 +1,5 @@
 /* Offline support: the game is a handful of static files, so cache them all and serve them first. */
-const CACHE = 'limpa-v19';
+const CACHE = 'limpa-v20';
 const FILES = ['./', 'index.html', 'css/style.css', 'js/engine.js', 'js/gamelog.js', 'js/bot-worker.js', 'js/app.js', 'js/net.js', 'js/vendor/peerjs.min.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => {

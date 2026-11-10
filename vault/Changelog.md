@@ -14,4 +14,5 @@
 - #17 Smooth card flights: start on the next frame, gentler easing (400 ms), no per-frame shadow filter
 - #18 Planning Expert: searches whole-turn plans and take-the-pile-or-draw to the end of the game, 3x faster simulations, thinks on several cores
 - #19 Loading screen; game-over scenes (win / lose / draw); meld cards slide to make room, landing settle, score bounce; Expert no longer takes a pile it must put back; first game records in `records/`
+- #20 Computers keep wildcards out of melds that are still pure unless the natural cards are gone, the game is nearly over, or it claims the deck / goes out
 Earlier: 3D UI, themes, bots (Easy/Smart/Expert), online rooms, GitHub Pages hosting, assistance, staged turns (later removed).

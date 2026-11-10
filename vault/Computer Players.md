@@ -51,5 +51,16 @@ How chess engines work: search ahead + judge positions, as many positions per se
   - Measure with the Brier script idea: replay `records/*.txt`, compare `beliefs().has()` with the real hands of the human seats.
 - Ideas not done yet: thinking during the human's turn; a learned position value so simulations can stop early (AlphaZero-style); more plan shapes (e.g. holding a wildcard for a later pure meld).
 
+## Wildcards and pure melds (Raghav, 10 Nov 2026)
+Raghav: "it places a joker whenever we are making a pure... with six aces down it adds the joker without checking whether the aces are all used. There has to be a very solid reason. And on 5-4-3 of spades plus the 2 of spades it adds another joker: never do that."
+- Old rule: a wildcard could always *finish* a 6-card pure meld (and join a long one after the early game).
+- New rule (`wildStrict`, in `smartMeldMoves`, so Smart, Expert, the Expert's plans and its simulations all follow it): a wildcard goes into a meld that is still pure only when
+  1. the natural cards that could still fit are gone (`wildDead`: fewer than 0.35 expected copies left, counting what is seen and, for the Expert, what opponents likely hold), or
+  2. the game is nearly over (`wildLateU .88`, about 4 cards left in the centre), or
+  3. it is part of a plan that claims the extra deck or goes out (`findGoOut`, unchanged).
+- Also: the pile-or-draw search no longer takes the pile when the only use for the top card would break a pure meld (`pickTier`).
+- Results, Smart with team play, 3200 games each: new rule vs old **56.7% decisive, +39 a game** (pure melds 1.3 a game vs 1.2... and more games won by going out). Later cutoff (`.95`): 50.2% vs the new rule (no better). Without the "one pure already banked, slim chance left" exception: 51.8%, so the exception was dropped (`wildSlim 0`).
+- `test/wild-rule.js` (runs before every deploy): six aces with aces still unseen: Joker stays in hand; aces dead or stack nearly out: Smart finishes the meld; 5-4-3-2 of spades: no second wildcard.
+
 ## How to evaluate
 `node test/bot-eval.js 1600 smart smart '<newParamsJson>' '<oldParamsJson>'` (about 90 s). Expert games are slow (about 4 s per decision budget), use few games.
