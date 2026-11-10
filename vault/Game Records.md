@@ -19,11 +19,14 @@ The site is static, so records are kept on each phone until a collection point i
 3. Responses tab > **Link to Sheets** (so Claude can read the records through the Google Drive connector).
 Then set `ENDPOINT = { url: 'https://docs.google.com/forms/d/e/<FORM_ID>/formResponse', field: 'entry.<NNN>' }` in `js/gamelog.js`, bump the service-worker cache, deploy.
 
+## Where records are kept
+`records/` in the repository, one .txt per batch (one game per line), as sent from Menu > Game records. Raghav pastes them in chat ("record the games on my github"); Claude adds the file and re-runs the tool on all of `records/*.txt`.
+
 ## Studying the records (`tools/analyze-games.js`)
 - `node tools/analyze-games.js <files...>`: .txt files sent from phones and/or the .csv downloaded from the responses sheet (long records arriving in parts are joined back up).
 - Replays every game exactly (`E.fromDeal` + moves). At each person's move it asks the Expert what it would do **from that person's point of view** (their hand and their own memory), and where they differ it judges both with `E.compareMoves` (both choices played out on the same imagined deals).
 - Writes `vault/Human Play Insights.md`: agreement per decision (draw, throw, meld, use the top card), patterns where people differ (took a small/big pile the Expert would leave, threw a card that fits the other team's melds, threw a wildcard, broke up a run, melded where the Expert would hold, made a middle-rank set, ...) with the average result in win-chance points, **what the computer could learn** (patterns where people are clearly better: at least 20 judged cases and a clear average), **where people lose most** (ideas for New player help), refused moves, decision times, help-button use, people-vs-computer results.
-- Speed: about 10 to 15 s a game with the defaults (`--deals 24 --think 6`).
+- Speed: about 25 s a game (`--deals 40 --think 500`; `--think` is now milliseconds for the planning Expert).
 - Try it without real data: `node tools/analyze-games.js --simulate 6 practice.txt` (Easy computers stand in for people), then analyse that file. Do not commit a report made from practice records.
 
 ## Loop
