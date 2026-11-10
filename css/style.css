@@ -98,6 +98,7 @@ a.btn{text-decoration:none}
 .shake{animation:shake .45s}
 @keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-7px)}40%{transform:translateX(7px)}60%{transform:translateX(-5px)}80%{transform:translateX(4px)}}
 @keyframes pop{from{transform:translateY(8px) scale(.98);opacity:0}to{transform:none;opacity:1}}
+@keyframes matin{from{opacity:.25}to{opacity:1}}
 @keyframes rise{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}
 @keyframes deal{from{translate:0 -50vh;rotate:12deg;scale:.6;opacity:0}to{opacity:1}}
 @keyframes breathe{0%,100%{opacity:.45}50%{opacity:1}}
@@ -399,3 +400,6 @@ table.res tr.tot td{font-weight:700;font-size:19px;color:var(--ink);border-botto
 @keyframes rot{0%,30%{transform:rotate(-90deg)}60%,100%{transform:rotate(0)}}
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}
   .hc.must::before,.stackcard.can::before,.topdis.can::before,.hc.hintc::before,.meld.hintm::before,.stackcard.hintg::before,.topdis.hintg::before,.seat.turn .nm::before{animation:none;opacity:1}}
+/* a view switch (Your melds / All / Pile): the mats ease in instead of snapping */
+.game.enter .zonewrap,.game.enter .mid{animation:matin .26s ease-out both}
+.score .n{transform-origin:left center}

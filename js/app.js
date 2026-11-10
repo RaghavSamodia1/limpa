@@ -767,7 +767,7 @@ function snapshot() {
     cards[el.dataset.cid] = Object.assign(geom(el, z === 'hand'), { zone: z, html: z === 'top' || z === 'hist' ? el.outerHTML : null });
   });
   const stack = app.querySelector('.stackcard'), deck = app.querySelector('.zonewrap.own .dstack');
-  return { viewer: UI.drawnViewer, cards, stack: stack && geom(stack, false), deck: deck && geom(deck, false) };
+  return { viewer: UI.drawnViewer, view: UI.lastView, scores: [0, 1].map((i) => { const e = app.querySelector('.score.t' + i + ' .n'); return e ? +e.textContent : null; }), cards, stack: stack && geom(stack, false), deck: deck && geom(deck, false) };
 }
 function launch(node, from, to, delay, fade, done) {
   const w = document.createElement('div'); w.className = 'fly';
@@ -798,7 +798,11 @@ function flyCard(el, from, delay) {
   launch(node, from, to, delay, false, () => {
     const k = (FLY.get(cid) || 1) - 1;
     if (k) { FLY.set(cid, k); return; }
-    FLY.delete(cid); app.querySelectorAll(`[data-cid="${cid}"]`).forEach((e) => { e.style.visibility = ''; });
+    FLY.delete(cid);
+    app.querySelectorAll(`[data-cid="${cid}"]`).forEach((e) => {
+      e.style.visibility = '';
+      if (e.animate) e.animate([{ scale: 1.06 }, { scale: 1 }], { duration: 180, easing: 'cubic-bezier(.2,.8,.2,1)' });   // settles as it lands
+    });
   });
 }
 function playFlights(before) {
@@ -811,7 +815,8 @@ function playFlights(before) {
     if (fan) { const r = fan.getBoundingClientRect(); src = { cx: r.left, cy: r.top, pw: UI.M ? UI.M.W * .1 : 40, tilt: UI.tilt, rot: 0 }; }
   }
   const pile = (zz) => zz === 'top' || zz === 'hist';
-  let n = 0;
+  const sameView = before.view === UI.lastView;       // when the view switches everything moves at once: the mats fade in instead
+  let n = 0, glides = 0;
   app.querySelectorAll('[data-cid]').forEach((el) => {
     const z = zoneOf(el); if (z === 'other') return;
     const prev = before.cards[el.dataset.cid];
@@ -824,6 +829,19 @@ function playFlights(before) {
       const g = geom(el, true), dx = prev.cx - g.cx, dy = prev.cy - g.cy;
       if (Math.abs(dx) + Math.abs(dy) > 1.5) el.animate([{ translate: dx + 'px ' + dy + 'px' }, { translate: '0px 0px' }], { duration: 240, easing: 'cubic-bezier(.23,1,.32,1)' });
     }
+    else if (prev && prev.pw && sameView && glides < 48 && prev.zone === z && (z === 'meld' || z === 'hist')) {   // cards already on the table make room: they slide (and resize) to their new place
+      const r = el.getBoundingClientRect(); if (!r.width || !el.offsetWidth) return;
+      const kx = r.width / el.offsetWidth, ky = r.height / el.offsetHeight;                 // screen pixels per layout pixel here (the table is tilted)
+      const dx = (prev.cx - (r.left + r.width / 2)) / kx, dy = (prev.cy - (r.top + r.height / 2)) / ky, sc = prev.pw / r.width;
+      if (Math.abs(dx) + Math.abs(dy) < 1.5 && Math.abs(sc - 1) < .02) return;
+      glides++;
+      el.animate([{ translate: dx + 'px ' + dy + 'px', scale: sc }, { translate: '0px 0px', scale: 1 }], { duration: 280, easing: 'cubic-bezier(.3,.2,.2,1)' });
+    }
+  });
+  if (before.scores && UI.G) UI.G.teams.forEach((t, i) => {            // a score that just changed gives a small bounce
+    if (before.scores[i] === null || E.teamScore(t) === before.scores[i]) return;
+    const chip = app.querySelector('.score.t' + i + ' .n');
+    if (chip && chip.animate) chip.animate([{ scale: 1 }, { scale: 1.35, offset: .35 }, { scale: 1 }], { duration: 520, easing: 'ease-out' });
   });
   if (!src) return;
   if (actor.type === 'draw' && before.stack) {            // a computer player draws: a card back goes to their hand
