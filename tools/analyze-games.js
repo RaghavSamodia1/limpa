@@ -9,7 +9,7 @@
      node tools/analyze-games.js <records...>     .txt files sent from the game menu (one game per line) and/or the
                                                    .csv downloaded from the collection sheet
        --deals N       imagined deals per comparison (default 24; more is slower and steadier)
-       --think N       imagined deals per throw for the Expert's own choice (default 6)
+       --think MS      how long the Expert thinks about its own choice, in milliseconds (default 400)
        --report FILE   where to write the report (default "vault/Human Play Insights.md"; "-" prints it)
        --simulate N OUT.txt   write N practice records in which Easy computers stand in for people (to try the tool)
 */
@@ -93,7 +93,7 @@ function startState(rec) {
 // The Expert's own choice for this seat in this exact position (a copy, playing as the Expert, with a fixed think)
 function expertChoice(G, seat, think) {
   const s = JSON.parse(JSON.stringify(G));
-  s.seats[seat].level = 'expert'; s.seats[seat].bot = true; s.seats[seat].params = { rollouts: think };
+  s.seats[seat].level = 'expert'; s.seats[seat].bot = true; s.seats[seat].params = { rollMs: think };       // the planning Expert: whole-turn plans and pile-or-draw, this long per search
   return E.botNextAction(s, seat);
 }
 function sameMove(a, b) {
@@ -204,7 +204,7 @@ const median = (l) => { if (!l || !l.length) return '-'; const s = l.slice().sor
 function report(S, opts, src) {
   const L = [];
   L.push('# Human Play Insights', '');
-  L.push(`Generated ${new Date().toISOString().slice(0, 10)} by \`node tools/analyze-games.js\` from ${S.games} recorded game(s) (${src}). ${S.decisions} decisions by people were compared with the Expert's choice in the same spot (from the person's point of view; the Expert thought with ${opts.think} imagined deals per throw). Each difference was judged by playing both choices out on ${opts.deals} imagined deals. "Win chance points" = how much better (+) or worse (−) the person's choice did than the Expert's, per 100 games.`, '');
+  L.push(`Generated ${new Date().toISOString().slice(0, 10)} by \`node tools/analyze-games.js\` from ${S.games} recorded game(s) (${src}). ${S.decisions} decisions by people were compared with the Expert's choice in the same spot (from the person's point of view; the Expert thought ${opts.think} ms per plan). Each difference was judged by playing both choices out on ${opts.deals} imagined deals. "Win chance points" = how much better (+) or worse (−) the person's choice did than the Expert's, per 100 games.`, '');
   if (S.replayErrors.length) L.push(`**Records that could not be replayed: ${S.replayErrors.length}** (first: ${S.replayErrors[0]}). These usually mean a record from an older version of the rules.`, '');
   L.push('## Decisions', '', '| Decision | People\'s moves | Same as the Expert | Different | Judged | Person better | Expert better | Average (win chance points) |', '|---|---|---|---|---|---|---|---|');
   for (const [k, r] of Object.entries(S.byKind).sort((a, b) => b[1].n - a[1].n)) {
@@ -268,7 +268,7 @@ if (require.main === module) {
   const args = process.argv.slice(2), opt = (k, d) => { const i = args.indexOf('--' + k); if (i < 0) return d; const v = args[i + 1]; args.splice(i, 2); return v; };
   const sim = args.indexOf('--simulate');
   if (sim >= 0) { simulate(+args[sim + 1] || 10, args[sim + 2] || 'practice-games.txt'); process.exit(0); }
-  const opts = { deals: +opt('deals', 24), think: +opt('think', 6), margin: .1 };
+  const opts = { deals: +opt('deals', 24), think: +opt('think', 400), margin: .1 };
   const out = opt('report', path.join(__dirname, '..', 'vault', 'Human Play Insights.md'));
   const files = args.filter((a) => !a.startsWith('--'));
   if (!files.length) { console.log('usage: node tools/analyze-games.js <records.txt|sheet.csv>... [--deals N] [--think N] [--report FILE|-]'); process.exit(1); }

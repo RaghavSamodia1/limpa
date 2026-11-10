@@ -482,10 +482,11 @@
      passed   - top cards each player chose not to take (drew from the centre instead, or returned the pile)
      threw    - cards each player threw
      took     - how many times each player took the pile
+     lastMeld - the turn each player last put cards on the table (a long gap with a big hand: sitting on something)
      lastPlay - the turn of each player's latest meld/throw step (to read "they would have added that by now")
      Memories are copy-on-write: an update replaces the lists it changes, so copies of a game can share them. */
   const ctype = (c) => (c.s === 'J' ? 'J' : c.s + c.r);
-  const newMind = () => ({ known: [[], [], [], []], passed: [[], [], [], []], threw: [[], [], [], []], took: [0, 0, 0, 0], lastPlay: [-1, -1, -1, -1] });
+  const newMind = () => ({ known: [[], [], [], []], passed: [[], [], [], []], threw: [[], [], [], []], took: [0, 0, 0, 0], lastPlay: [-1, -1, -1, -1], lastMeld: [-1, -1, -1, -1] });
   function mindsOf(state) { if (!state.minds) state.minds = [0, 1, 2, 3].map(newMind); return state.minds; }
   const mindOf = (state, seat) => mindsOf(state)[seat];
   // Everyone at the table watches player p do something; each writes it into their own memory.
@@ -493,7 +494,7 @@
     state.minds = mindsOf(state).map((m) => {
       if (!m) return m;                               // a phone in an online game only holds its own player's memory
       const n = Object.assign({}, m);
-      for (const f in changes) n[f] = m[f].map((x, i) => (i === p ? changes[f](x) : x));
+      for (const f in changes) n[f] = (m[f] || [-1, -1, -1, -1]).map((x, i) => (i === p ? changes[f](x) : x));   // (a game saved before a field existed)
       return n;
     });
   }
@@ -567,7 +568,7 @@
         T.melds.push(m);
         const mustName = state.mustUse ? cardName(cards.find((c) => c.id === state.mustUse)) : null;
         me.hand = me.hand.filter((c) => !ids.includes(c.id));
-        witness(state, seat, { known: dropIds(ids) });
+        witness(state, seat, { known: dropIds(ids), lastMeld: () => state.turnNo });
         markDeckUse(state, seat, cards);
         state.mustUse = null;
         const r = afterMeld(state, seat, events, mustName);
@@ -589,7 +590,7 @@
           return fail('This wildcard will make your pure meld impure (200 → 100 at the end of your turn).', 'confirmImpure');
         save();                                       // the snapshot holds its own copy of every meld
         if (m.type === 'seq') m.slots = v.slots; else m.cards = v.cards;
-        m.lt = state.turnNo; witness(state, seat, { known: dropIds(ids) });
+        m.lt = state.turnNo; witness(state, seat, { known: dropIds(ids), lastMeld: () => state.turnNo });
         const mustName = state.mustUse ? cardName(cards.find((c) => c.id === state.mustUse)) : null;
         me.hand = me.hand.filter((c) => !ids.includes(c.id));
         markDeckUse(state, seat, cards);
@@ -860,10 +861,10 @@
     allSets: 0, wildNew: 1, wildAdd: 1, danger: 1, spendWild: 1, goOutCheck: 1,
     wildNewHand: 8, wildNewU: .3, wildAddLen: 4, wildAddU: .35, wildAddAny: .7,
     dangerW: 30, wildKeep: 70, wildBase: 15, sameRankW: 12, adjW: 26, gapW: 15, fitW: 60,
-    addBase: 50, addLenW: 6, newBase: 60, newLenW: 12, wildNewBase: 28, completeW: 90, pureW: 80, pickTier: 6,
+    addBase: 50, addLenW: 6, newBase: 60, newLenW: 12, wildNewBase: 28, completeW: 90, pureW: 80, pickTier: 6, pilePayoff: 1,
     // expert play: sets only from edge ranks (A K Q J 3 4) until the game is nearly over, card counting for outs,
     // and keeping a wildcard back while the natural card that would finish a pure meld is still likely to come
-    pureFirst: 1, pureU: .95, pureNewU: .6, pureLive: 1, finish: 1, outMaxHand: 9, outBudget: 400, outBranch: 7, outDepth: 5, team: 0, claim: 0, rollMarginW: .0004, dangerUse: 45, dangerPile: .4, dangerDone: 30, infMeld: .15, infPass: .75, infThrow: .55, infAge: 16, rollouts: 0, rollMs: 0, rollCands: 4, expertMs: 300, plan: 0, planDrawMs: 0, planThrows: 4, planThrowsAlt: 2, planNoWild: 1, planStep: 4, planMinDeals: 2, planMaxDeals: 400, setMode: 1, midSetU: .85, midSetHand: 3, setKeepRuns: 1, outsW: 9, setOutsW: 4, dangerGapW: 10, waitLive: 2, waitU: .55,
+    pureFirst: 1, pureU: .95, pureNewU: .6, pureLive: 1, finish: 1, outMaxHand: 9, outBudget: 400, outBranch: 7, outDepth: 5, team: 0, claim: 0, rollMarginW: .0004, dangerUse: 45, dangerPile: .4, dangerDone: 30, infMeld: .15, infPass: .75, infThrow: .55, infAge: 16, infHold: 1, infSit: 1, infSitHand: 9, infSitTurns: 12, rollouts: 0, rollMs: 0, rollCands: 4, expertMs: 300, plan: 0, planDrawMs: 0, planThrows: 4, planThrowsAlt: 2, planNoWild: 1, planLoose: 0, planStep: 4, planMinDeals: 2, planMaxDeals: 400, setMode: 1, midSetU: .85, midSetHand: 3, setKeepRuns: 1, outsW: 9, setOutsW: 4, dangerGapW: 10, waitLive: 2, waitU: .55,
   };
   // Settings for one seat. Asked for many times a move, so kept per seat settings, level and think time (never edited by callers).
   const PCACHE = new WeakMap(), NOPARAMS = {};
@@ -932,6 +933,15 @@
           if (addOne(m, { id: '?', s: su, r }).ok) mul(b, su + r, P.infMeld);
         }
       }
+      // hoarding: cards they took from the pile and still hold are being kept for something, so the cards that would
+      // go with them (same suit next door, same rank) are more likely in that hand too
+      if (P.infHold !== 1) for (const x of mem.known[p]) {
+        const c = cardById(x.id); if (!c || isWildType(c)) continue;
+        for (const [r2, d] of nbrs(c.r)) if (r2 !== 2) mul(b, c.s + r2, d === 1 ? P.infHold : (1 + P.infHold) / 2);
+        for (const su of SUITS) if (su !== c.s) mul(b, su + c.r, (1 + P.infHold) / 2);
+      }
+      // a long hold: a big hand and no meld step for many turns suggests waiting on wildcards and near-finished melds
+      if (P.infSit !== 1 && b.n >= P.infSitHand && turn - Math.max(0, (mem.lastMeld || [])[p] || 0) >= P.infSitTurns) for (const k of ['J', 'S2', 'H2', 'D2', 'C2']) mul(b, k, P.infSit);
       for (const e of mem.passed[p]) {
         if (e.s === 'J' || e.r === 2 || turn - e.t > P.infAge) continue;
         for (const [r2, d] of nbrs(e.r)) if (r2 !== 2) mul(b, e.s + r2, d === 1 ? P.infPass : (1 + P.infPass) / 2);
@@ -1271,10 +1281,10 @@
   // without wildcard melds, each followed by its best few throws.
   function turnPlans(state, seat, P, B) {
     const lines = [], keyOf = (acts) => acts.map((a) => a.type + (a.meldId || '') + (a.cardIds || [a.cardId]).join()).join('|');
-    const walk = (skip) => {
+    const walk = (skip, Q) => {
       const acts = []; let s = state;
       for (let i = 0; i < 12; i++) {
-        const a = nextMeld(s, seat, P, B, skip); if (!a) break;
+        const a = nextMeld(s, seat, Q || P, B, skip); if (!a) break;
         const s2 = clone(s); if (!apply(s2, seat, a).ok) break;
         acts.push(a); s = s2;
         if (s.phase === 'over' || s.turn !== seat) break;
@@ -1284,6 +1294,8 @@
     const full = walk(null);
     for (let k = full.length; k >= 0; k--) lines.push(full.slice(0, k));
     if (P.planNoWild) lines.push(walk((a) => a.confirmImpure || (a.type === 'newMeld' && a.cardIds.some((id) => isWildType(state.seats[seat].hand.find((c) => c.id === id) || {})))));
+    // the bold line: spend wildcards on melds now, where the cautious rules would wait for natural cards
+    if (P.planLoose) lines.push(walk(null, Object.assign({}, P, { pureFirst: 0, wildNewHand: 0, wildNewU: -1, wildAddAny: -1, wildAddU: -1, wildAddLen: 3, waitU: -1 })));
     const plans = [], seen = {};
     lines.forEach((acts, li) => {
       let s = clone(state);
@@ -1353,6 +1365,7 @@
   function searchDraw(state, seat, P, B, plain) {
     if (!state.discard.length || state.pileRefused || !state.stack.length) return plain;
     const test = clone(state); if (!apply(test, seat, { type: 'pickup' }).ok) return plain;
+    if (!findUseFor(test, seat, test.mustUse)) return plain;         // can't use the top card: taking the pile would only mean putting it back
     const opts = [{ type: 'pickup' }, { type: 'draw' }];
     return opts[searchLines(state, seat, P, B, opts.map((a) => [a]), P.planDrawMs, 'draw')];
   }
@@ -1361,7 +1374,7 @@
     if (state.discard.length && !state.pileRefused) {
       const test = clone(state);
       if (apply(test, seat, { type: 'pickup' }).ok && findUseFor(test, seat, test.mustUse, P.pickTier)) {
-        if (!CFG.botPilePayoff || simulating || pilePaysOff(state, seat).ok) return { type: 'pickup' };
+        if (!CFG.botPilePayoff || !P.pilePayoff || simulating || pilePaysOff(state, seat).ok) return { type: 'pickup' };
       }
     }
     if (!state.stack.length) return { type: 'endGame' };

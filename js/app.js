@@ -767,7 +767,7 @@ function snapshot() {
     cards[el.dataset.cid] = Object.assign(geom(el, z === 'hand'), { zone: z, html: z === 'top' || z === 'hist' ? el.outerHTML : null });
   });
   const stack = app.querySelector('.stackcard'), deck = app.querySelector('.zonewrap.own .dstack');
-  return { viewer: UI.drawnViewer, cards, stack: stack && geom(stack, false), deck: deck && geom(deck, false) };
+  return { viewer: UI.drawnViewer, view: UI.lastView, scores: [0, 1].map((i) => { const e = app.querySelector('.score.t' + i + ' .n'); return e ? +e.textContent : null; }), cards, stack: stack && geom(stack, false), deck: deck && geom(deck, false) };
 }
 function launch(node, from, to, delay, fade, done) {
   const w = document.createElement('div'); w.className = 'fly';
@@ -798,7 +798,11 @@ function flyCard(el, from, delay) {
   launch(node, from, to, delay, false, () => {
     const k = (FLY.get(cid) || 1) - 1;
     if (k) { FLY.set(cid, k); return; }
-    FLY.delete(cid); app.querySelectorAll(`[data-cid="${cid}"]`).forEach((e) => { e.style.visibility = ''; });
+    FLY.delete(cid);
+    app.querySelectorAll(`[data-cid="${cid}"]`).forEach((e) => {
+      e.style.visibility = '';
+      if (e.animate) e.animate([{ scale: 1.06 }, { scale: 1 }], { duration: 180, easing: 'cubic-bezier(.2,.8,.2,1)' });   // settles as it lands
+    });
   });
 }
 function playFlights(before) {
@@ -811,7 +815,8 @@ function playFlights(before) {
     if (fan) { const r = fan.getBoundingClientRect(); src = { cx: r.left, cy: r.top, pw: UI.M ? UI.M.W * .1 : 40, tilt: UI.tilt, rot: 0 }; }
   }
   const pile = (zz) => zz === 'top' || zz === 'hist';
-  let n = 0;
+  const sameView = before.view === UI.lastView;       // when the view switches everything moves at once: the mats fade in instead
+  let n = 0, glides = 0;
   app.querySelectorAll('[data-cid]').forEach((el) => {
     const z = zoneOf(el); if (z === 'other') return;
     const prev = before.cards[el.dataset.cid];
@@ -824,6 +829,19 @@ function playFlights(before) {
       const g = geom(el, true), dx = prev.cx - g.cx, dy = prev.cy - g.cy;
       if (Math.abs(dx) + Math.abs(dy) > 1.5) el.animate([{ translate: dx + 'px ' + dy + 'px' }, { translate: '0px 0px' }], { duration: 240, easing: 'cubic-bezier(.23,1,.32,1)' });
     }
+    else if (prev && prev.pw && sameView && glides < 48 && prev.zone === z && (z === 'meld' || z === 'hist')) {   // cards already on the table make room: they slide (and resize) to their new place
+      const r = el.getBoundingClientRect(); if (!r.width || !el.offsetWidth) return;
+      const kx = r.width / el.offsetWidth, ky = r.height / el.offsetHeight;                 // screen pixels per layout pixel here (the table is tilted)
+      const dx = (prev.cx - (r.left + r.width / 2)) / kx, dy = (prev.cy - (r.top + r.height / 2)) / ky, sc = prev.pw / r.width;
+      if (Math.abs(dx) + Math.abs(dy) < 1.5 && Math.abs(sc - 1) < .02) return;
+      glides++;
+      el.animate([{ translate: dx + 'px ' + dy + 'px', scale: sc }, { translate: '0px 0px', scale: 1 }], { duration: 280, easing: 'cubic-bezier(.3,.2,.2,1)' });
+    }
+  });
+  if (before.scores && UI.G) UI.G.teams.forEach((t, i) => {            // a score that just changed gives a small bounce
+    if (before.scores[i] === null || E.teamScore(t) === before.scores[i]) return;
+    const chip = app.querySelector('.score.t' + i + ' .n');
+    if (chip && chip.animate) chip.animate([{ scale: 1 }, { scale: 1.35, offset: .35 }, { scale: 1 }], { duration: 520, easing: 'ease-out' });
   });
   if (!src) return;
   if (actor.type === 'draw' && before.stack) {            // a computer player draws: a card back goes to their hand
@@ -890,6 +908,14 @@ function render(carry) {
   drawToasts();
   Object.keys(keep).forEach((id)=>{ const el=document.getElementById(id); if (el) { el.scrollLeft=keep[id][0]; el.scrollTop=keep[id][1]; } });
   if (UI.shake) { const el = document.querySelector(UI.shake); if (el) el.classList.add('shake'); UI.shake = null; }
+  if (UI.modal && UI.modal.type === 'results' && !UI.modal.seen) {          // the ending plays once, not on every redraw
+    UI.modal.seen = true;
+    if (!REDUCED) app.querySelectorAll('.res .tot td[data-n]').forEach((td) => {
+      const to = +td.dataset.n, t0 = performance.now(), dur = 900;
+      const tick = (t) => { if (!td.isConnected) return; const k = Math.min(1, (t - t0 - 500) / dur); td.textContent = k <= 0 ? 0 : Math.round(to * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(tick); };
+      td.textContent = 0; requestAnimationFrame(tick);
+    });
+  }
   // Too many melds for the mat: tip the table flatter (more depth per row) and lay it out again.
   if (UI.screen === 'game' && fitMelds() < .85 && UI.tilt > TILT_MIN) { UI.tilt = Math.max(TILT_MIN, UI.tilt - 6); render({ before }); return; }
   if (before) playFlights(before);
@@ -1294,9 +1320,19 @@ function renderModal() {
   if (M.type === 'results') {
     const R = G.result; const b = R.breakdown;
     const win = R.winner === null ? "It's a draw" : esc(b[R.winner].name) + ' wins';
+    // how it ends for whoever holds this phone: their team won, lost, or (people on both teams of one phone) simply a winner
+    const mine = E.teamOf(UI.viewer), both = !UI.net && new Set(humans().map(E.teamOf)).size > 1;
+    const mood = R.winner === null ? 'draw' : (both || R.winner === mine) ? 'win' : 'lose';
+    const gap = Math.abs(b[0].total - b[1].total);
+    const line = mood === 'draw' ? 'Dead level. One more?' : both ? 'Well played, everyone.' : mood === 'win' ? (gap >= 400 ? 'A proper feast. Well played!' : 'Well played!') : (gap <= 100 ? 'So close. Next one is yours.' : 'Good game. Next one is yours.');
+    const play = !M.seen && !REDUCED;
+    const bits = mood === 'win' && play ? `<div class="confetti" aria-hidden="true">${Array.from({ length: 26 }, (_, i) => `<i style="--x:${(i * 37 + 11) % 100}%;--d:${(i % 9) * 0.09}s;--r:${(i * 73) % 360}deg;--c:var(${['--accent', '--t1', '--wild', '--good', '--t0'][i % 5]});--w:${6 + (i % 3) * 3}px;--t:${1.9 + (i % 5) * 0.22}s"></i>`).join('')}</div>` : '';
+    const scene = `<div class="fin fin-${mood} ${play ? 'play' : ''}" aria-hidden="true"><div class="sun"></div><div class="fc fc1">A♠</div><div class="fc fc2">L</div><div class="fc fc3">K♥</div></div>`;
     const pen = (x) => x.penalties.length ? x.penalties.map((p)=>`${p.pts} <span class="muted" style="font-size:10px">(${esc(p.reason)})</span>`).join('<br>') : '0';
-    return `<div class="ov"><div class="modal">
+    return `<div class="ov">${bits}<div class="modal results ${play ? 'play' : ''}">
+      ${scene}
       <div class="winner">${win}</div>
+      <div class="finline">${line}</div>
       <div class="muted" style="text-align:center;font-size:12px">${R.reason==='out'?esc(G.seats[R.outSeat].name)+' went out':'The centre stack ran out'}</div>
       <table class="res">
         <tr><th></th><th>${esc(b[0].name)}</th><th>${esc(b[1].name)}</th></tr>
@@ -1306,7 +1342,7 @@ function renderModal() {
         <tr><td>Meld points</td><td>${b[0].meldPoints}</td><td>${b[1].meldPoints}</td></tr>
         <tr><td>Going-out bonus</td><td>${b[0].bonus}</td><td>${b[1].bonus}</td></tr>
         <tr><td>Penalties</td><td>${pen(b[0])}</td><td>${pen(b[1])}</td></tr>
-        <tr class="tot"><td>Total</td><td>${b[0].total}</td><td>${b[1].total}</td></tr>
+        <tr class="tot"><td>Total</td><td data-n="${b[0].total}">${b[0].total}</td><td data-n="${b[1].total}">${b[1].total}</td></tr>
       </table>
       <div class="bigrow">${isGuest() ? '<div class="muted" style="width:100%;text-align:center">Waiting for the host to start another game…</div>' : '<button class="btn" data-act="again">Play again</button>'}<button class="btn ghost" data-act="quit">${UI.net ? 'Leave room' : 'Main menu'}</button><button class="btn ghost" data-act="close">View table</button></div>
     </div></div>`;
@@ -1563,4 +1599,8 @@ window.__limpa = { UI, E, render, after, addToMeld, act, NETCFG, ROOM_RE, schedu
 { const m = /[#&]room=([0-9A-Za-z-]+)/.exec(location.hash || '');
   if (m) { UI.joinCode = normCode(m[1]); UI.screen = 'join'; try { history.replaceState(null, '', location.href.split('#')[0]); } catch (e) {} } }
 render();
+{ // the loading screen stays long enough to be seen (not a flash), then fades into the menu
+  const sp = document.getElementById('splash');
+  if (sp) { const gone = () => sp.remove(); if (REDUCED) gone(); else setTimeout(() => { sp.classList.add('out'); setTimeout(gone, 380); }, Math.max(0, 1100 - performance.now())); }
+}
 })();
