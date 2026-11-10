@@ -860,10 +860,10 @@
     allSets: 0, wildNew: 1, wildAdd: 1, danger: 1, spendWild: 1, goOutCheck: 1,
     wildNewHand: 8, wildNewU: .3, wildAddLen: 4, wildAddU: .35, wildAddAny: .7,
     dangerW: 30, wildKeep: 70, wildBase: 15, sameRankW: 12, adjW: 26, gapW: 15, fitW: 60,
-    addBase: 50, addLenW: 6, newBase: 60, newLenW: 12, wildNewBase: 28, completeW: 90, pureW: 80, pickTier: 6,
+    addBase: 50, addLenW: 6, newBase: 60, newLenW: 12, wildNewBase: 28, completeW: 90, pureW: 80, pickTier: 6, pilePayoff: 1,
     // expert play: sets only from edge ranks (A K Q J 3 4) until the game is nearly over, card counting for outs,
     // and keeping a wildcard back while the natural card that would finish a pure meld is still likely to come
-    pureFirst: 1, pureU: .95, pureNewU: .6, pureLive: 1, finish: 1, outMaxHand: 9, outBudget: 400, outBranch: 7, outDepth: 5, team: 0, claim: 0, rollMarginW: .0004, dangerUse: 45, dangerPile: .4, dangerDone: 30, infMeld: .15, infPass: .75, infThrow: .55, infAge: 16, rollouts: 0, rollMs: 0, rollCands: 4, expertMs: 300, plan: 0, planDrawMs: 0, planThrows: 4, planThrowsAlt: 2, planNoWild: 1, planStep: 4, planMinDeals: 2, planMaxDeals: 400, setMode: 1, midSetU: .85, midSetHand: 3, setKeepRuns: 1, outsW: 9, setOutsW: 4, dangerGapW: 10, waitLive: 2, waitU: .55,
+    pureFirst: 1, pureU: .95, pureNewU: .6, pureLive: 1, finish: 1, outMaxHand: 9, outBudget: 400, outBranch: 7, outDepth: 5, team: 0, claim: 0, rollMarginW: .0004, dangerUse: 45, dangerPile: .4, dangerDone: 30, infMeld: .15, infPass: .75, infThrow: .55, infAge: 16, rollouts: 0, rollMs: 0, rollCands: 4, expertMs: 300, plan: 0, planDrawMs: 0, planThrows: 4, planThrowsAlt: 2, planNoWild: 1, planLoose: 0, planStep: 4, planMinDeals: 2, planMaxDeals: 400, setMode: 1, midSetU: .85, midSetHand: 3, setKeepRuns: 1, outsW: 9, setOutsW: 4, dangerGapW: 10, waitLive: 2, waitU: .55,
   };
   // Settings for one seat. Asked for many times a move, so kept per seat settings, level and think time (never edited by callers).
   const PCACHE = new WeakMap(), NOPARAMS = {};
@@ -1271,10 +1271,10 @@
   // without wildcard melds, each followed by its best few throws.
   function turnPlans(state, seat, P, B) {
     const lines = [], keyOf = (acts) => acts.map((a) => a.type + (a.meldId || '') + (a.cardIds || [a.cardId]).join()).join('|');
-    const walk = (skip) => {
+    const walk = (skip, Q) => {
       const acts = []; let s = state;
       for (let i = 0; i < 12; i++) {
-        const a = nextMeld(s, seat, P, B, skip); if (!a) break;
+        const a = nextMeld(s, seat, Q || P, B, skip); if (!a) break;
         const s2 = clone(s); if (!apply(s2, seat, a).ok) break;
         acts.push(a); s = s2;
         if (s.phase === 'over' || s.turn !== seat) break;
@@ -1284,6 +1284,8 @@
     const full = walk(null);
     for (let k = full.length; k >= 0; k--) lines.push(full.slice(0, k));
     if (P.planNoWild) lines.push(walk((a) => a.confirmImpure || (a.type === 'newMeld' && a.cardIds.some((id) => isWildType(state.seats[seat].hand.find((c) => c.id === id) || {})))));
+    // the bold line: spend wildcards on melds now, where the cautious rules would wait for natural cards
+    if (P.planLoose) lines.push(walk(null, Object.assign({}, P, { pureFirst: 0, wildNewHand: 0, wildNewU: -1, wildAddAny: -1, wildAddU: -1, wildAddLen: 3, waitU: -1 })));
     const plans = [], seen = {};
     lines.forEach((acts, li) => {
       let s = clone(state);
@@ -1353,6 +1355,7 @@
   function searchDraw(state, seat, P, B, plain) {
     if (!state.discard.length || state.pileRefused || !state.stack.length) return plain;
     const test = clone(state); if (!apply(test, seat, { type: 'pickup' }).ok) return plain;
+    if (!findUseFor(test, seat, test.mustUse)) return plain;         // can't use the top card: taking the pile would only mean putting it back
     const opts = [{ type: 'pickup' }, { type: 'draw' }];
     return opts[searchLines(state, seat, P, B, opts.map((a) => [a]), P.planDrawMs, 'draw')];
   }
@@ -1361,7 +1364,7 @@
     if (state.discard.length && !state.pileRefused) {
       const test = clone(state);
       if (apply(test, seat, { type: 'pickup' }).ok && findUseFor(test, seat, test.mustUse, P.pickTier)) {
-        if (!CFG.botPilePayoff || simulating || pilePaysOff(state, seat).ok) return { type: 'pickup' };
+        if (!CFG.botPilePayoff || !P.pilePayoff || simulating || pilePaysOff(state, seat).ok) return { type: 'pickup' };
       }
     }
     if (!state.stack.length) return { type: 'endGame' };
