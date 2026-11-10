@@ -44,6 +44,11 @@ How chess engines work: search ahead + judge positions, as many positions per se
 - **Found in Raghav's first recorded games (10 Nov):** the Expert took the pile and put it straight back in 41 of 75 pickups (the pile-or-draw search compared two identical outcomes and noise picked). Fixed: the search only runs when the top card can be used. Re-measured vs the pre-planning Expert: 64.4% decisive, +98 a game (240 games); the three runs so far (68.7, 74.2, 64.4) are within noise of each other, so call it about two in three.
 - Smart's simple pile rule was re-tuned and is flat (`pilePayoff 0`: 50.3%, `pickTier 7`: 50.4%, `pickTier 5`: 48.7%, 2400 games each): the gain comes from searching, not from a better rule.
 - Tried and left off (`planLoose`): a bold plan line that spends wildcards on melds where the cautious rules wait. 49.5% decisive, -7 a game (320 games): no gain, so the cautious rules already cover it.
+- Tried and left off (Raghav, 10 Nov: "gauge what they must be hoarding"), both in `beliefs` behind params:
+  - **Hoarding read** (`infHold`): cards that go with what a player took from the pile and still holds (same suit next door, same rank) made more likely. Hand-guess error (Brier) 0.06103 -> 0.06093 on self-play, 0.07241 -> 0.07228 on the people in the 5 recorded games: next to nothing. In play 49.0% (1.5) and 48.7% (2.2) over 3200 games.
+  - **Long hold** (`infSit`, uses the new `lastMeld` memory): a big hand and no meld for many turns means wildcards are more likely. No change in accuracy, 49.9% in play.
+  - Why: the certain part (the exact cards taken and kept) is already used, and what is left over is weak. Reading one person's habits needs many more recorded games.
+  - Measure with the Brier script idea: replay `records/*.txt`, compare `beliefs().has()` with the real hands of the human seats.
 - Ideas not done yet: thinking during the human's turn; a learned position value so simulations can stop early (AlphaZero-style); more plan shapes (e.g. holding a wildcard for a later pure meld).
 
 ## How to evaluate

@@ -482,10 +482,11 @@
      passed   - top cards each player chose not to take (drew from the centre instead, or returned the pile)
      threw    - cards each player threw
      took     - how many times each player took the pile
+     lastMeld - the turn each player last put cards on the table (a long gap with a big hand: sitting on something)
      lastPlay - the turn of each player's latest meld/throw step (to read "they would have added that by now")
      Memories are copy-on-write: an update replaces the lists it changes, so copies of a game can share them. */
   const ctype = (c) => (c.s === 'J' ? 'J' : c.s + c.r);
-  const newMind = () => ({ known: [[], [], [], []], passed: [[], [], [], []], threw: [[], [], [], []], took: [0, 0, 0, 0], lastPlay: [-1, -1, -1, -1] });
+  const newMind = () => ({ known: [[], [], [], []], passed: [[], [], [], []], threw: [[], [], [], []], took: [0, 0, 0, 0], lastPlay: [-1, -1, -1, -1], lastMeld: [-1, -1, -1, -1] });
   function mindsOf(state) { if (!state.minds) state.minds = [0, 1, 2, 3].map(newMind); return state.minds; }
   const mindOf = (state, seat) => mindsOf(state)[seat];
   // Everyone at the table watches player p do something; each writes it into their own memory.
@@ -493,7 +494,7 @@
     state.minds = mindsOf(state).map((m) => {
       if (!m) return m;                               // a phone in an online game only holds its own player's memory
       const n = Object.assign({}, m);
-      for (const f in changes) n[f] = m[f].map((x, i) => (i === p ? changes[f](x) : x));
+      for (const f in changes) n[f] = (m[f] || [-1, -1, -1, -1]).map((x, i) => (i === p ? changes[f](x) : x));   // (a game saved before a field existed)
       return n;
     });
   }
@@ -567,7 +568,7 @@
         T.melds.push(m);
         const mustName = state.mustUse ? cardName(cards.find((c) => c.id === state.mustUse)) : null;
         me.hand = me.hand.filter((c) => !ids.includes(c.id));
-        witness(state, seat, { known: dropIds(ids) });
+        witness(state, seat, { known: dropIds(ids), lastMeld: () => state.turnNo });
         markDeckUse(state, seat, cards);
         state.mustUse = null;
         const r = afterMeld(state, seat, events, mustName);
@@ -589,7 +590,7 @@
           return fail('This wildcard will make your pure meld impure (200 → 100 at the end of your turn).', 'confirmImpure');
         save();                                       // the snapshot holds its own copy of every meld
         if (m.type === 'seq') m.slots = v.slots; else m.cards = v.cards;
-        m.lt = state.turnNo; witness(state, seat, { known: dropIds(ids) });
+        m.lt = state.turnNo; witness(state, seat, { known: dropIds(ids), lastMeld: () => state.turnNo });
         const mustName = state.mustUse ? cardName(cards.find((c) => c.id === state.mustUse)) : null;
         me.hand = me.hand.filter((c) => !ids.includes(c.id));
         markDeckUse(state, seat, cards);
@@ -863,7 +864,7 @@
     addBase: 50, addLenW: 6, newBase: 60, newLenW: 12, wildNewBase: 28, completeW: 90, pureW: 80, pickTier: 6, pilePayoff: 1,
     // expert play: sets only from edge ranks (A K Q J 3 4) until the game is nearly over, card counting for outs,
     // and keeping a wildcard back while the natural card that would finish a pure meld is still likely to come
-    pureFirst: 1, pureU: .95, pureNewU: .6, pureLive: 1, finish: 1, outMaxHand: 9, outBudget: 400, outBranch: 7, outDepth: 5, team: 0, claim: 0, rollMarginW: .0004, dangerUse: 45, dangerPile: .4, dangerDone: 30, infMeld: .15, infPass: .75, infThrow: .55, infAge: 16, rollouts: 0, rollMs: 0, rollCands: 4, expertMs: 300, plan: 0, planDrawMs: 0, planThrows: 4, planThrowsAlt: 2, planNoWild: 1, planLoose: 0, planStep: 4, planMinDeals: 2, planMaxDeals: 400, setMode: 1, midSetU: .85, midSetHand: 3, setKeepRuns: 1, outsW: 9, setOutsW: 4, dangerGapW: 10, waitLive: 2, waitU: .55,
+    pureFirst: 1, pureU: .95, pureNewU: .6, pureLive: 1, finish: 1, outMaxHand: 9, outBudget: 400, outBranch: 7, outDepth: 5, team: 0, claim: 0, rollMarginW: .0004, dangerUse: 45, dangerPile: .4, dangerDone: 30, infMeld: .15, infPass: .75, infThrow: .55, infAge: 16, infHold: 1, infSit: 1, infSitHand: 9, infSitTurns: 12, rollouts: 0, rollMs: 0, rollCands: 4, expertMs: 300, plan: 0, planDrawMs: 0, planThrows: 4, planThrowsAlt: 2, planNoWild: 1, planLoose: 0, planStep: 4, planMinDeals: 2, planMaxDeals: 400, setMode: 1, midSetU: .85, midSetHand: 3, setKeepRuns: 1, outsW: 9, setOutsW: 4, dangerGapW: 10, waitLive: 2, waitU: .55,
   };
   // Settings for one seat. Asked for many times a move, so kept per seat settings, level and think time (never edited by callers).
   const PCACHE = new WeakMap(), NOPARAMS = {};
@@ -932,6 +933,15 @@
           if (addOne(m, { id: '?', s: su, r }).ok) mul(b, su + r, P.infMeld);
         }
       }
+      // hoarding: cards they took from the pile and still hold are being kept for something, so the cards that would
+      // go with them (same suit next door, same rank) are more likely in that hand too
+      if (P.infHold !== 1) for (const x of mem.known[p]) {
+        const c = cardById(x.id); if (!c || isWildType(c)) continue;
+        for (const [r2, d] of nbrs(c.r)) if (r2 !== 2) mul(b, c.s + r2, d === 1 ? P.infHold : (1 + P.infHold) / 2);
+        for (const su of SUITS) if (su !== c.s) mul(b, su + c.r, (1 + P.infHold) / 2);
+      }
+      // a long hold: a big hand and no meld step for many turns suggests waiting on wildcards and near-finished melds
+      if (P.infSit !== 1 && b.n >= P.infSitHand && turn - Math.max(0, (mem.lastMeld || [])[p] || 0) >= P.infSitTurns) for (const k of ['J', 'S2', 'H2', 'D2', 'C2']) mul(b, k, P.infSit);
       for (const e of mem.passed[p]) {
         if (e.s === 'J' || e.r === 2 || turn - e.t > P.infAge) continue;
         for (const [r2, d] of nbrs(e.r)) if (r2 !== 2) mul(b, e.s + r2, d === 1 ? P.infPass : (1 + P.infPass) / 2);
