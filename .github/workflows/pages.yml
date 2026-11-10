@@ -20,6 +20,7 @@ jobs:
           node-version: 22
       - run: node test/engine-smoke.js 100
       - run: node test/bot-memory.js
+      - run: node test/wild-rule.js
   deploy:
     needs: test
     runs-on: ubuntu-latest

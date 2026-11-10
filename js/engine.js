@@ -861,7 +861,7 @@
     allSets: 0, wildNew: 1, wildAdd: 1, danger: 1, spendWild: 1, goOutCheck: 1,
     wildNewHand: 8, wildNewU: .3, wildAddLen: 4, wildAddU: .35, wildAddAny: .7,
     dangerW: 30, wildKeep: 70, wildBase: 15, sameRankW: 12, adjW: 26, gapW: 15, fitW: 60,
-    addBase: 50, addLenW: 6, newBase: 60, newLenW: 12, wildNewBase: 28, completeW: 90, pureW: 80, pickTier: 6, pilePayoff: 1,
+    addBase: 50, addLenW: 6, newBase: 60, newLenW: 12, wildNewBase: 28, completeW: 90, pureW: 80, pickTier: 6, pilePayoff: 1, wildStrict: 1, wildDead: .35, wildLateU: .88, wildSlim: 0, wildSlimU: .6,
     // expert play: sets only from edge ranks (A K Q J 3 4) until the game is nearly over, card counting for outs,
     // and keeping a wildcard back while the natural card that would finish a pure meld is still likely to come
     pureFirst: 1, pureU: .95, pureNewU: .6, pureLive: 1, finish: 1, outMaxHand: 9, outBudget: 400, outBranch: 7, outDepth: 5, team: 0, claim: 0, rollMarginW: .0004, dangerUse: 45, dangerPile: .4, dangerDone: 30, infMeld: .15, infPass: .75, infThrow: .55, infAge: 16, infHold: 1, infSit: 1, infSitHand: 9, infSitTurns: 12, rollouts: 0, rollMs: 0, rollCands: 4, expertMs: 300, plan: 0, planDrawMs: 0, planThrows: 4, planThrowsAlt: 2, planNoWild: 1, planLoose: 0, planStep: 4, planMinDeals: 2, planMaxDeals: 400, setMode: 1, midSetU: .85, midSetHand: 3, setKeepRuns: 1, outsW: 9, setOutsW: 4, dangerGapW: 10, waitLive: 2, waitU: .55,
@@ -1091,6 +1091,19 @@
           if (!P.wildAdd) continue;
           const finishing = len + 1 >= CFG.completeAt && !isComplete(m);
           if (isComplete(m)) continue;                            // would turn a scored pure meld impure for nothing
+          if (P.wildStrict) {
+            // A meld that is still pure is worth double, so a wildcard needs a solid reason to go in (Raghav, 10 Nov 2026):
+            // the natural cards that could still fit are gone, or the game is nearly over. (Claiming the extra deck and
+            // going out are planned separately by findGoOut and may still spend it.) With one pure meld already banked
+            // the team can afford to finish a second one impure when only a slim chance of the natural card is left.
+            let live;
+            if (m.type === 'seq') {
+              const rs1 = m.slots.map((x) => x.r), hi1 = Math.max(...rs1), lo1 = Math.min(...rs1);
+              live = (hi1 < 14 ? unseenB(m.suit, hi1 === 13 ? 1 : hi1 + 1) : 0) + (lo1 > 1 ? unseenB(m.suit, lo1 - 1) : 0);
+            } else live = SUITS.reduce((a, su) => a + unseenB(su, m.rank), 0);
+            const dead = live < P.wildDead, banked = completedInfo(T).pure > 0;
+            if (!(dead || u > P.wildLateU || (finishing && banked && live < P.wildSlim && u > P.wildSlimU))) continue;
+          }
           if (!(finishing || (len >= P.wildAddLen && u > P.wildAddU) || u > P.wildAddAny)) continue;
           if (m.type === 'seq' && P.pureFirst && u < P.pureU && completedInfo(T).pure === 0) {     // the team needs one pure meld to go out: protect it
             const rs0 = m.slots.map((x) => x.r), hi0 = Math.max(...rs0), lo0 = Math.min(...rs0);
@@ -1365,7 +1378,7 @@
   function searchDraw(state, seat, P, B, plain) {
     if (!state.discard.length || state.pileRefused || !state.stack.length) return plain;
     const test = clone(state); if (!apply(test, seat, { type: 'pickup' }).ok) return plain;
-    if (!findUseFor(test, seat, test.mustUse)) return plain;         // can't use the top card: taking the pile would only mean putting it back
+    if (!findUseFor(test, seat, test.mustUse, P.pickTier)) return plain;         // can't use the top card: taking the pile would only mean putting it back
     const opts = [{ type: 'pickup' }, { type: 'draw' }];
     return opts[searchLines(state, seat, P, B, opts.map((a) => [a]), P.planDrawMs, 'draw')];
   }
