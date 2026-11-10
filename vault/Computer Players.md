@@ -43,6 +43,7 @@ How chess engines work: search ahead + judge positions, as many positions per se
   - shipped settings vs old: **74.2% decisive, +133 a game**. Takes 41 pile cards a game vs 24: the search finds the pickups that pay off (the earlier test of a pickup lookahead had too few deals to see it).
 - **Found in Raghav's first recorded games (10 Nov):** the Expert took the pile and put it straight back in 41 of 75 pickups (the pile-or-draw search compared two identical outcomes and noise picked). Fixed: the search only runs when the top card can be used. Re-measured vs the pre-planning Expert: 64.4% decisive, +98 a game (240 games); the three runs so far (68.7, 74.2, 64.4) are within noise of each other, so call it about two in three.
 - Smart's simple pile rule was re-tuned and is flat (`pilePayoff 0`: 50.3%, `pickTier 7`: 50.4%, `pickTier 5`: 48.7%, 2400 games each): the gain comes from searching, not from a better rule.
+- Tried and left off (`planLoose`): a bold plan line that spends wildcards on melds where the cautious rules wait. 49.5% decisive, -7 a game (320 games): no gain, so the cautious rules already cover it.
 - Ideas not done yet: thinking during the human's turn; a learned position value so simulations can stop early (AlphaZero-style); more plan shapes (e.g. holding a wildcard for a later pure meld).
 
 ## How to evaluate
