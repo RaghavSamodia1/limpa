@@ -62,5 +62,12 @@ Raghav: "it places a joker whenever we are making a pure... with six aces down i
 - Results, Smart with team play, 3200 games each: new rule vs old **56.7% decisive, +39 a game** (pure melds 1.3 a game vs 1.2... and more games won by going out). Later cutoff (`.95`): 50.2% vs the new rule (no better). Without the "one pure already banked, slim chance left" exception: 51.8%, so the exception was dropped (`wildSlim 0`).
 - `test/wild-rule.js` (runs before every deploy): six aces with aces still unseen: Joker stays in hand; aces dead or stack nearly out: Smart finishes the meld; 5-4-3-2 of spades: no second wildcard.
 
+## One long meld, not two short ones (Raghav, 11 Nov 2026)
+Screenshot: Raghav melded 8-7-6 of clubs; his partner (Expert) held 10-9-8 of clubs and opened a second clubs run instead of adding the 9 and 10. Cause: a new 3-card meld scored 96 in `smartMeldMoves`, adding one card to a 3-card meld 68.
+- `joinFirst`: a new meld is not opened when any of its natural cards fits a team meld that is not complete yet; the cards are added instead (the adds are already in the move list).
+- Result, Smart with team play, 3200 games: **53.1% decisive, +22 a game**. The same rule for wildcard melds (`joinWild`): 50.2%, left off.
+- Also measured at Expert level for the wildcard rule of #20: 52.9% decisive, +25 a game (240 games).
+- `test/wild-rule.js` now also sets up this exact position.
+
 ## How to evaluate
 `node test/bot-eval.js 1600 smart smart '<newParamsJson>' '<oldParamsJson>'` (about 90 s). Expert games are slow (about 4 s per decision budget), use few games.
