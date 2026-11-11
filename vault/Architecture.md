@@ -1,5 +1,5 @@
 # Architecture
-Static site, no build step. `index.html`, `css/style.css`, `js/engine.js` (rules + bots), `js/gamelog.js` (game records), `js/bot-worker.js` (computer thinking thread), `js/app.js` (UI), `tools/analyze-games.js` (studies records), `js/net.js` (PeerJS transport), `js/vendor/peerjs.min.js`, `sw.js` (service worker), `manifest.webmanifest`, `icons/`.
+Static site, no build step. `index.html`, `css/style.css`, `js/engine.js` (rules + bots), `js/gamelog.js` (game records), `js/bot-worker.js` (computer thinking thread), `js/app.js` (UI), `tools/analyze-games.js` (studies records), `tools/audit-bots.js` (counts odd-looking computer moves), `js/net.js` (PeerJS transport), `js/vendor/peerjs.min.js`, `sw.js` (service worker), `manifest.webmanifest`, `icons/`.
 
 ## UI (`js/app.js`)
 - DOM is rebuilt on every `render()`. Card motion is done by diffing positions: `snapshot()` before, `playFlights()` after (clones fly; hand cards glide via Web Animations `translate`).

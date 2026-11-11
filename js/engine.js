@@ -861,10 +861,10 @@
     allSets: 0, wildNew: 1, wildAdd: 1, danger: 1, spendWild: 1, goOutCheck: 1,
     wildNewHand: 8, wildNewU: .3, wildAddLen: 4, wildAddU: .35, wildAddAny: .7,
     dangerW: 30, wildKeep: 70, wildBase: 15, sameRankW: 12, adjW: 26, gapW: 15, fitW: 60,
-    addBase: 50, addLenW: 6, newBase: 60, newLenW: 12, wildNewBase: 28, completeW: 90, pureW: 80, pickTier: 6, pilePayoff: 1, wildStrict: 1, wildDead: .35, wildLateU: .88, wildSlim: 0, wildSlimU: .6,
+    addBase: 50, addLenW: 6, newBase: 60, newLenW: 12, wildNewBase: 28, completeW: 90, pureW: 80, pickTier: 6, pilePayoff: 1, wildStrict: 1, joinFirst: 1, joinWild: 1, doneLast: 1, wildOwn: 1, wildDead: .35, wildLateU: .88, wildSlim: 0, wildSlimU: .6,
     // expert play: sets only from edge ranks (A K Q J 3 4) until the game is nearly over, card counting for outs,
     // and keeping a wildcard back while the natural card that would finish a pure meld is still likely to come
-    pureFirst: 1, pureU: .95, pureNewU: .6, pureLive: 1, finish: 1, outMaxHand: 9, outBudget: 400, outBranch: 7, outDepth: 5, team: 0, claim: 0, rollMarginW: .0004, dangerUse: 45, dangerPile: .4, dangerDone: 30, infMeld: .15, infPass: .75, infThrow: .55, infAge: 16, infHold: 1, infSit: 1, infSitHand: 9, infSitTurns: 12, rollouts: 0, rollMs: 0, rollCands: 4, expertMs: 300, plan: 0, planDrawMs: 0, planThrows: 4, planThrowsAlt: 2, planNoWild: 1, planLoose: 0, planStep: 4, planMinDeals: 2, planMaxDeals: 400, setMode: 1, midSetU: .85, midSetHand: 3, setKeepRuns: 1, outsW: 9, setOutsW: 4, dangerGapW: 10, waitLive: 2, waitU: .55,
+    pureFirst: 1, pureU: .95, pureNewU: .6, pureLive: 1, finish: 1, outMaxHand: 9, outBudget: 400, outBranch: 7, outDepth: 5, team: 0, claim: 0, rollMarginW: .0004, dangerUse: 90, dangerPile: .4, dangerDone: 30, infMeld: .15, infPass: .75, infThrow: .55, infAge: 16, infHold: 1, infSit: 1, infSitHand: 9, infSitTurns: 12, rollouts: 0, rollMs: 0, rollCands: 4, expertMs: 300, plan: 0, planDrawMs: 0, planThrows: 4, planThrowsAlt: 2, planNoWild: 1, planLoose: 0, planStep: 4, planMinDeals: 2, planMaxDeals: 400, setMode: 1, midSetU: .85, midSetHand: 3, setKeepRuns: 1, outsW: 9, setOutsW: 4, dangerGapW: 10, waitLive: 2, waitU: .55,
   };
   // Settings for one seat. Asked for many times a move, so kept per seat settings, level and think time (never edited by callers).
   const PCACHE = new WeakMap(), NOPARAMS = {};
@@ -1062,7 +1062,12 @@
           const lo = Math.min(...g.map((c) => c.r === 1 ? 1 : c.r)), hi = Math.max(...g.map((c) => c.r));
           if (hi - lo > k + 1 && !g.some((c) => c.r === 1)) continue;
           const v = checkNewMeld(g.concat([wild]), setsOnTable);
-          if (v.ok && v.meld.type === 'seq') out.push(g.concat([wild]));
+          if (!v.ok || v.meld.type !== 'seq') continue;
+          if (P.wildOwn) {                                         // the wildcard would stand in for a card this hand holds: lay the natural card instead
+            const sl = v.meld.slots.find((x) => x.c.id === wild.id);
+            if (sl && !isNaturalAt(wild, sl.r, s) && nat.some((c) => c.s === s && (c.r === sl.r || (c.r === 1 && sl.r === 14)))) continue;
+          }
+          out.push(g.concat([wild]));
         }
       }
     }
@@ -1086,6 +1091,7 @@
         const usesWild = wasPure && !v.pure;
         let score = P.addBase + len * P.addLenW + (m.type === 'set' ? 4 : 0);
         if (len + 1 === CFG.completeAt) score += P.completeW + (v.pure ? P.pureW : 0);
+        if (P.doneLast && isComplete(m)) score = P.addBase - 10 + (len >= 10 && meldPure(m) ? len : 0);   // a finished meld scores nothing more (a long pure run may still grow into a Timpa): unfinished melds take the card first
         const act = { type: 'addToMeld', meldId: m.id, cardIds: [c.id] };
         if (usesWild) {
           if (!P.wildAdd) continue;
@@ -1121,13 +1127,18 @@
       }
     }
     const handHasWild = hand.some(isWildType);
+    // One long meld beats two short ones (a meld scores at 7 cards): cards that fit a team meld still being built go
+    // onto it, they do not open a second meld beside it (Raghav, 11 Nov 2026: partner opened 10-9-8 of clubs next to 8-7-6).
+    const open = P.joinFirst ? T.melds.filter((m) => !isComplete(m)) : [];
+    const joins = (g) => open.length && g.some((c) => !isWildType(c) && open.some((m) => addOne(m, c).ok));
     for (const g of findNewMeldsAll(hand, sets, P, late)) {
       if (!checkNewMeld(g, sets).ok) continue;
+      if (joins(g)) continue;
       moves.push({ score: P.newBase + g.length * P.newLenW, act: { type: 'newMeld', cardIds: g.map((c) => c.id) } });
     }
     const needPure = P.pureFirst && completedInfo(T).pure === 0 && u < P.pureNewU;
     if (P.wildNew && !needPure && handHasWild && (hand.length >= P.wildNewHand || u > P.wildNewU || T.deckStatus === 'unclaimed' && hand.length <= 5)) {
-      for (const g of findWildMelds(hand, sets, P, late)) moves.push({ score: P.wildNewBase + g.length * 10, act: { type: 'newMeld', cardIds: g.map((c) => c.id) } });
+      for (const g of findWildMelds(hand, sets, P, late)) if (!P.joinWild || !joins(g)) moves.push({ score: P.wildNewBase + g.length * 10, act: { type: 'newMeld', cardIds: g.map((c) => c.id) } });
     }
     moves.sort((a, b) => b.score - a.score);
     return moves;
@@ -1407,7 +1418,7 @@
     let budget = P.outBudget;
     const cands = (st) => {
       const hand = st.seats[seat].hand, T = st.teams[team], sets = T.melds.filter((m) => m.type === 'set').length, out = [];
-      for (const m of T.melds) for (const c of hand) {
+      for (const m of T.melds.slice().sort((a, b) => isComplete(a) - isComplete(b))) for (const c of hand) {     // unfinished melds take a card first
         const v = addOne(m, c); if (v.ok && !(claim && breaksPure(m, v))) out.push({ type: 'addToMeld', meldId: m.id, cardIds: [c.id], confirmImpure: true });
       }
       for (const g of findNewMeldsAll(hand, sets, P, true)) if (checkNewMeld(g, sets).ok) out.push({ type: 'newMeld', cardIds: g.map((c) => c.id) });

@@ -62,5 +62,24 @@ Raghav: "it places a joker whenever we are making a pure... with six aces down i
 - Results, Smart with team play, 3200 games each: new rule vs old **56.7% decisive, +39 a game** (pure melds 1.3 a game vs 1.2... and more games won by going out). Later cutoff (`.95`): 50.2% vs the new rule (no better). Without the "one pure already banked, slim chance left" exception: 51.8%, so the exception was dropped (`wildSlim 0`).
 - `test/wild-rule.js` (runs before every deploy): six aces with aces still unseen: Joker stays in hand; aces dead or stack nearly out: Smart finishes the meld; 5-4-3-2 of spades: no second wildcard.
 
+## One long meld, not two short ones (Raghav, 11 Nov 2026)
+Screenshot: Raghav melded 8-7-6 of clubs; his partner (Expert) held 10-9-8 of clubs and opened a second clubs run instead of adding the 9 and 10. Cause: a new 3-card meld scored 96 in `smartMeldMoves`, adding one card to a 3-card meld 68.
+- `joinFirst`: a new meld is not opened when any of its natural cards fits a team meld that is not complete yet; the cards are added instead (the adds are already in the move list).
+- Result, Smart with team play, 3200 games: **53.1% decisive, +22 a game**. The same rule for wildcard melds (`joinWild`): 50.2%, left off.
+- Also measured at Expert level for the wildcard rule of #20: 52.9% decisive, +25 a game (240 games).
+- `test/wild-rule.js` now also sets up this exact position.
+
+## Habit audit (Raghav, 11 Nov 2026: "find more such behavior")
+`node tools/audit-bots.js 300 smart '{"team":1,"claim":1}' ex` plays computer-only games and counts moves a human partner would call wrong, with examples. Run it after any rule change. Found and fixed (each measured, Smart with team play, 3200 games vs the same without it):
+- **Added to a finished meld a card an unfinished meld needed** (0.68 a game -> 0.18): the score grew with meld length, so a finished 8-card run beat a 4-card set. `doneLast`: a finished meld takes a card last (a pure run of 10+ may still grow toward a Timpa). 50.9%.
+- **Spent a wildcard on a spot whose natural card was in the same hand** (e.g. 6-5-4 of hearts + a 2 while holding the 3): `wildOwn` in `findWildMelds`. 50.2% (rare).
+- **Opened a wildcard meld whose natural cards fit a team meld** (`joinWild`, the wildcard twin of `joinFirst`). 50.2% alone.
+- The three together: 52.1%.
+- **Fed the other team while holding a useless safe card** (0.37 a game -> 0.07): throw caution doubled, `dangerUse 45 -> 90` (52.1%; 65: 51.5%; 130: 49.4% vs 90, too timid).
+- Go-out / claim plans (`findGoOut`) also try unfinished melds first.
+- **All of the above with `joinFirst` vs none: 55.5% decisive, +42 a game.** At Expert level: 54.4% decisive, +54 a game (240 games).
+Looked wrong but is right or forced (left alone): throwing a card that fits your own meld with 2 cards left when the team may not empty the hand; keeping a card that "fits" only by shifting a 2 into a wildcard spot (it would spoil a pure meld); a second run in a suit far from the first (A-K-Q beside 7-6-5); wildcard melds made to use the top card of a pile worth taking.
+Still open: 17% of throws fit some opponent meld (mostly no safe card left; a smarter choice of *which* meld to feed is possible); 0.8 team-games in 2 end with no pure meld; 0.4 never claim the extra deck.
+
 ## How to evaluate
 `node test/bot-eval.js 1600 smart smart '<newParamsJson>' '<oldParamsJson>'` (about 90 s). Expert games are slow (about 4 s per decision budget), use few games.

@@ -30,4 +30,34 @@ for (const level of ['smart', 'expert']) {
   if (level === 'smart') ok(spoils(setup(A6, [['J', 0], ...junk], { level, stack: 2 })), level + ': the centre stack is nearly out: the Joker finishes the meld');
   ok(!spoils(setup(run, [['J', 0], ...junk], { level })), level + ': 5-4-3-2 of spades (pure, natural 2): no second wildcard added');
 }
+// One long meld, not two short ones: with 8-7-6 of clubs on the table, a partner holding 10-9-8 of clubs adds the 9 and
+// the 10 to it instead of opening a second clubs run (Raghav's screenshot, 11 Nov 2026).
+for (const level of ['smart', 'expert']) {
+  const G = E.createGame({ seats: [0, 1, 2, 3].map(() => ({ bot: true, level })) });
+  const all = []; G.seats.forEach((s) => { all.push(...s.hand); s.hand = []; }); all.push(...G.stack, ...G.discard); G.teams.forEach((t) => { all.push(...t.deck); t.deck = []; });
+  const take = (s, r) => all.splice(all.findIndex((c) => c.s === s && c.r === r), 1)[0];
+  const v = E.checkNewMeld([['C', 8], ['C', 7], ['C', 6]].map(([s, r]) => take(s, r)), 0);
+  G.teams[0].melds.push({ id: 'mx', team: 0, scored: null, points: 0, lt: 0, type: 'seq', suit: v.meld.suit, rank: undefined, slots: v.meld.slots, cards: undefined });
+  G.seats[0].hand = [['C', 10], ['C', 9], ['C', 8], ['S', 12], ['H', 5], ['D', 13], ['S', 3], ['H', 11]].map(([s, r]) => take(s, r));
+  G.discard = [all.pop()]; [1, 2, 3].forEach((i) => { G.seats[i].hand = all.splice(0, 11); }); G.teams.forEach((t) => { t.deck = all.splice(0, 11); }); G.stack = all.splice(0, 25);
+  Object.assign(G, { turn: 0, phase: 'play', mustUse: null });
+  for (let i = 0; i < 6 && G.turn === 0 && G.phase === 'play'; i++) { const a = E.botNextAction(G, 0); if (!E.apply(G, 0, a).ok) break; }
+  const T = G.teams[0], clubs = T.melds.filter((m) => m.type === 'seq' && m.suit === 'C');
+  ok(clubs.length === 1, level + ': no second clubs run opened beside 8-7-6');
+  if (level === 'smart') ok(clubs[0].slots.length === 5, level + ': the 9 and the 10 went onto it (10-9-8-7-6)');
+}
+// A card that fits both a finished meld and an unfinished one goes to the unfinished one (a finished meld scores nothing more).
+{
+  const G = E.createGame({ seats: [0, 1, 2, 3].map(() => ({ bot: true, level: 'smart' })) });
+  const all = []; G.seats.forEach((s) => { all.push(...s.hand); s.hand = []; }); all.push(...G.stack, ...G.discard); G.teams.forEach((t) => { all.push(...t.deck); t.deck = []; });
+  const take = (s, r) => all.splice(all.findIndex((c) => c.s === s && c.r === r), 1)[0];
+  const lay = (id, cs, scored) => { const v = E.checkNewMeld(cs.map(([s, r]) => take(s, r)), 0); G.teams[0].melds.push({ id, team: 0, scored: scored || null, points: scored ? 200 : 0, lt: 0, type: v.meld.type, suit: v.meld.suit, rank: v.meld.rank, slots: v.meld.slots, cards: v.meld.cards }); };
+  lay('run', [['D', 11], ['D', 10], ['D', 9], ['D', 8], ['D', 7], ['D', 6], ['D', 5]], 'pure');
+  lay('set', [['S', 12], ['H', 12], ['H', 12], ['S', 12]]);
+  G.seats[0].hand = [['D', 12], ['C', 3], ['H', 9], ['S', 6], ['C', 13]].map(([s, r]) => take(s, r));
+  G.discard = [all.pop()]; [1, 2, 3].forEach((i) => { G.seats[i].hand = all.splice(0, 11); }); G.teams.forEach((t) => { t.deck = all.splice(0, 11); }); G.stack = all.splice(0, 25);
+  Object.assign(G, { turn: 0, phase: 'play', mustUse: null });
+  const a = E.botNextAction(G, 0);
+  ok(a.type === 'addToMeld' && a.meldId === 'set', 'smart: Q of diamonds goes onto the unfinished set of queens, not the finished diamond run');
+}
 console.log(fails ? fails + ' FAILED' : 'ALL PASSED');
