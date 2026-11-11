@@ -77,7 +77,7 @@ Screenshot: Raghav melded 8-7-6 of clubs; his partner (Expert) held 10-9-8 of cl
 - The three together: 52.1%.
 - **Fed the other team while holding a useless safe card** (0.37 a game -> 0.07): throw caution doubled, `dangerUse 45 -> 90` (52.1%; 65: 51.5%; 130: 49.4% vs 90, too timid).
 - Go-out / claim plans (`findGoOut`) also try unfinished melds first.
-- **All of the above with `joinFirst` vs none: 55.5% decisive, +42 a game.**
+- **All of the above with `joinFirst` vs none: 55.5% decisive, +42 a game.** At Expert level: 54.4% decisive, +54 a game (240 games).
 Looked wrong but is right or forced (left alone): throwing a card that fits your own meld with 2 cards left when the team may not empty the hand; keeping a card that "fits" only by shifting a 2 into a wildcard spot (it would spoil a pure meld); a second run in a suit far from the first (A-K-Q beside 7-6-5); wildcard melds made to use the top card of a pile worth taking.
 Still open: 17% of throws fit some opponent meld (mostly no safe card left; a smarter choice of *which* meld to feed is possible); 0.8 team-games in 2 end with no pure meld; 0.4 never claim the extra deck.
 
